@@ -1,72 +1,96 @@
 package cn.buwei.nativeapp.features
 
-import android.util.Log
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
-import cn.buwei.nativeapp.data.ClientRepository
-import cn.buwei.nativeapp.BuildConfig
+import cn.buwei.nativeapp.data.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.*
-import java.util.UUID
 
-/** Only text leaves are changed. Marks, attributes, references, tables and unknown nodes round-trip. */
-@Composable
-internal fun NativeRichMaterialEditor(repository:ClientRepository,path:String,material:JsonObject){
- var editing by remember(path){mutableStateOf(false)}
- var savedDocument by rememberSaveable(path){mutableStateOf(material.obj("currentVersion").obj("doc").toString())}
- val document=remember(savedDocument){Json.parseToJsonElement(savedDocument).jsonObject}
- var busy by remember{mutableStateOf(false)};var result by remember{mutableStateOf<String?>(null)};var revision by remember(path){mutableStateOf(material["revision"]?:JsonPrimitive(1))};val scope=rememberCoroutineScope();val intentKey=remember(savedDocument,revision){UUID.randomUUID().toString()}
- if(!editing){OutlinedButton({editing=true}){Text("编辑正文")};result?.let{Text(it)};return}
- Text("编辑版本 ${revision.jsonPrimitive.content} · 保留原有块、格式、表格与引用",style=MaterialTheme.typography.bodySmall)
- RichNodeEditor(document,0){savedDocument=it.toString()}
- result?.let{Text(it,color=MaterialTheme.colorScheme.error)}
- Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
-  Button({busy=true;scope.launch{try{
-   // Omit markdown intentionally: backend material API derives it through docToMarkdown.
-   val response=repository.request("PUT",path,buildJsonObject{put("expectedRevision",revision);put("doc",document);put("attachmentIds",JsonArray((material.obj("currentVersion")["attachments"]as? JsonArray)?.mapNotNull{it.jsonObject["fileId"]}.orEmpty()))},intentKey)
-   if(response.flag("queued")){result="已保存到本机，等待联网同步；服务端版本未更新。同步完成后请刷新核对，再继续编辑。"}else{revision=response["revision"]?:revision;result="已保存新版本"};editing=false
-  }catch(e:CancellationException){throw e}catch(e:Exception){
-   if(BuildConfig.DEBUG){
-    // Class names and source locations only: no document, request body, credentials or error payload.
-    Log.e("NativeRichEditor","Material save failed: ${e.javaClass.name}\n"+e.stackTrace.joinToString("\n"))
-    e.cause?.let{cause->Log.e("NativeRichEditor","Cause: ${cause.javaClass.name}\n"+cause.stackTrace.joinToString("\n"))}
-   }
-   result=(e.message?.takeIf{it.isNotBlank()}?:"保存失败 (${e.javaClass.simpleName})")+"；编辑内容已保留。版本冲突时先复制内容，再刷新核对。"
-  }finally{busy=false}}},enabled=!busy){Text("保存新版本")}
-  TextButton({editing=false},enabled=!busy){Text("暂存编辑并返回")}
- }
+internal data class RichSelection(val path:List<Int>,val range:TextRange)
+
+@Composable internal fun NativeRichMaterialEditor(repository:ClientRepository,path:String,material:JsonObject) {
+    val owner=repository.accountId?:return;val epoch=repository.epoch
+    val store=remember(repository){NativeDraftStore(repository)};val draftKey="material:$path";val scope=rememberCoroutineScope()
+    val original=material.obj("currentVersion").obj("doc").takeIf{it.text("type")=="doc"}?:richNode("doc")
+    var serialized by rememberSaveable(owner,epoch,path){mutableStateOf(original.toString())}
+    val document=remember(serialized){Json.parseToJsonElement(serialized).jsonObject}
+    var revision by rememberSaveable(owner,epoch,path){mutableIntStateOf(material["revision"]?.jsonPrimitive?.intOrNull?:1)}
+    var editing by rememberSaveable(owner,epoch,path){mutableStateOf(false)}
+    var recovery by remember(owner,epoch,path){mutableStateOf<JsonObject?>(null)}
+    var conflict by remember(owner,epoch,path){mutableStateOf<JsonObject?>(null)}
+    var busy by remember(owner,epoch,path){mutableStateOf(false)}
+    var message by remember(owner,epoch,path){mutableStateOf<String?>(null)}
+    var error by remember(owner,epoch,path){mutableStateOf<String?>(null)}
+    var queued by remember(owner,epoch,path){mutableStateOf(false)}
+    var history by remember(owner,epoch,path){mutableStateOf<List<JsonObject>>(emptyList())}
+    var future by remember(owner,epoch,path){mutableStateOf<List<JsonObject>>(emptyList())}
+    var selection by remember(owner,epoch,path){mutableStateOf<RichSelection?>(null)}
+    var linkDialog by remember{mutableStateOf(false)};var link by remember{mutableStateOf("")};var discard by remember{mutableStateOf(false)}
+    fun envelope(value:JsonObject=document)=buildJsonObject {put("doc",value);put("revision",revision);put("updatedAt",System.currentTimeMillis());put("queued",queued)}
+    fun persist(value:JsonObject) {store.scheduleSave(draftKey,envelope(value),owner,epoch){failure->error="本机草稿保存失败，请保留此页面并尽快保存：${failure.message.orEmpty()}"}}
+    fun change(value:JsonObject) {if(busy||queued)return;history=(history+document).takeLast(20);future=emptyList();serialized=value.toString();persist(value);message=null}
+    suspend fun leave() {store.save(draftKey,envelope(),owner,epoch);editing=false;message="编辑已保存在当前账户的本机草稿中"}
+    LaunchedEffect(owner,epoch,path) {try{recovery=store.read(draftKey,owner,epoch)}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}}
+    BackHandler(editing) {scope.launch {try{leave()}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}}}
+    recovery?.let {saved->Card(Modifier.fillMaxWidth()) {Column(Modifier.padding(12.dp)) {
+        Text("找到本机材料草稿",style=MaterialTheme.typography.titleMedium)
+        Text("基于版本 ${saved.text("revision")}；当前材料版本 ${material.text("revision")}")
+        Row {
+            TextButton(onClick={serialized=saved.obj("doc").toString();revision=saved["revision"]?.jsonPrimitive?.intOrNull?:revision;queued=saved.flag("queued");recovery=null;editing=true;message=if(queued)"此草稿已排队等待同步，请同步并核对后继续编辑"else"已恢复本机编辑，保存仍按原版本核对"}){Text("恢复本机编辑")}
+            TextButton(onClick={discard=true}){Text("删除本机草稿")}
+        }
+    }}}
+    if(discard)AlertDialog(onDismissRequest={discard=false},title={Text("删除本机草稿？")},text={Text("仅删除此账户的本机编辑；已保存的服务端版本不受影响。")},confirmButton={TextButton(onClick={discard=false;scope.launch{try{store.remove(draftKey,owner,epoch);recovery=null;serialized=original.toString();revision=material["revision"]?.jsonPrimitive?.intOrNull?:1;queued=false;editing=false}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}}}){Text("删除本机草稿")}},dismissButton={TextButton(onClick={discard=false}){Text("保留")}})
+    if(!editing) {OutlinedButton(onClick={editing=true},enabled=recovery==null&&!queued){Text("编辑正文")};message?.let{Text(it)};error?.let{Text(it,color=MaterialTheme.colorScheme.error)};return}
+    Text("编辑版本 $revision",style=MaterialTheme.typography.bodySmall)
+    Text("选中文字可设置格式；内容块可调整顺序。引用、附件和历史版本继续保留。",style=MaterialTheme.typography.bodySmall)
+    FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+        OutlinedButton(onClick={val previous=history.last();future=(future+document).takeLast(20);history=history.dropLast(1);serialized=previous.toString();persist(previous);selection=null},enabled=history.isNotEmpty()&&!busy&&!queued){Text("撤销")}
+        OutlinedButton(onClick={val next=future.last();history=(history+document).takeLast(20);future=future.dropLast(1);serialized=next.toString();persist(next);selection=null},enabled=future.isNotEmpty()&&!busy&&!queued){Text("重做")}
+        listOf("bold" to "粗体","italic" to "斜体","strike" to "删除线","code" to "行内代码").forEach {(kind,title)->TextButton(onClick={selection?.let{selected->change(richFormatSelection(document,selected.path,selected.range.min,selected.range.max,kind));selection=null}},enabled=selection?.range?.collapsed==false&&!busy&&!queued){Text(title)}}
+        TextButton(onClick={link="";linkDialog=true},enabled=selection?.range?.collapsed==false&&!busy&&!queued){Text("链接")}
+    }
+    RichBlockEditor(document,emptyList(),!busy&&!queued,{change(it)},{selection=it})
+    message?.let{Text(it)};error?.let{Text(it,color=MaterialTheme.colorScheme.error)}
+    conflict?.let {latest->Card(Modifier.fillMaxWidth()) {Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+        Text("服务端版本已变化",style=MaterialTheme.typography.titleMedium)
+        Text("本机编辑仍基于版本 $revision；最新版本 ${latest.text("revision")}。请对照最新正文后决定是否以本机编辑保存新版本。")
+        NativeMarkdown(latest.obj("currentVersion").text("markdown"))
+        TextButton(onClick={revision=latest["revision"]!!.jsonPrimitive.int;conflict=null;persist(document);message="已按你确认的最新版本继续，尚未提交"}){Text("已核对，保留本机编辑继续")}
+    }}}
+    if(queued)OutlinedButton(onClick={scope.launch{busy=true;try{repository.sync();if(repository.pending().any{it.path==repository.resolvePath(path)})message="此材料仍有待同步或冲突记录，请打开本机待同步核对"else {conflict=repository.get(path);queued=false;message="同步已完成，请核对服务端最新正文"}}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}finally{busy=false}}},enabled=!busy){Text("同步并核对")}
+    FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+        Button(onClick={busy=true;error=null;scope.launch{try {
+            require(serialized.toByteArray().size<=200*1024){"正文超过 200 KiB 保存上限，请拆分材料；本机草稿继续保留"}
+            store.save(draftKey,envelope(),owner,epoch)
+            val response=repository.requestDurably("material:$path","PUT",path,buildJsonObject {
+                put("expectedRevision",revision);put("doc",document)
+                put("attachmentIds",JsonArray((material.obj("currentVersion")["attachments"]as? JsonArray).orEmpty().mapNotNull{it.jsonObject["fileId"]}))
+            })
+            if(response.flag("queued")){queued=true;store.save(draftKey,envelope(),owner,epoch);message="已保存到本机，等待联网同步；服务端版本尚未更新"}
+            else {revision=response["revision"]?.jsonPrimitive?.intOrNull?:revision;store.remove(draftKey,owner,epoch);editing=false;message="已保存新版本";history=emptyList();future=emptyList()}
+        }catch(e:CancellationException){throw e}catch(e:Exception){
+            error=(e.message?:"保存失败")+"；本机编辑已保留"
+            if(e is ApiException&&e.status==409)try{conflict=repository.get(path)}catch(read:CancellationException){throw read}catch(_:Exception){message="无法读取最新版本，请联网后刷新核对"}
+        }finally{busy=false}}},enabled=!busy&&!queued&&conflict==null){Text("保存新版本")}
+        TextButton(onClick={scope.launch{try{leave()}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}}},enabled=!busy){Text("暂存编辑并返回")}
+    }
+    if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
+    if(linkDialog)AlertDialog(onDismissRequest={linkDialog=false},title={Text("设置链接")},text={Column {OutlinedTextField(link,{link=it},label={Text("https:// 或项目内路径")});Text("留空可移除所选文字的链接")}},confirmButton={TextButton(onClick={
+        val valid=link.isBlank()||link.startsWith("https://")||link.startsWith("http://")||(link.startsWith('/')&&!link.startsWith("//"))
+        if(!valid){error="链接仅支持 http、https 或项目内路径";return@TextButton}
+        selection?.let{selected->change(richFormatSelection(document,selected.path,selected.range.min,selected.range.max,"link",if(link.isBlank())null else buildJsonObject{put("href",link);put("target","_blank");put("rel","noopener noreferrer nofollow")},remove=link.isBlank()))};selection=null;linkDialog=false
+    }){Text("应用链接")}},dismissButton={TextButton(onClick={linkDialog=false}){Text("取消")}})
 }
 
-@Composable
-private fun RichNodeEditor(node:JsonObject,depth:Int,onChange:(JsonObject)->Unit){
- val type=node.text("type");val children=node["content"]as? JsonArray
- if(depth>30){Text("保留较深层级内容（未展开编辑）");return}
- when{
-  type=="text"->{OutlinedTextField(node.text("text"),{newText->onChange(editRichText(node,emptyList(),newText))},modifier=Modifier.fillMaxWidth(),label={Text(if(node["marks"]is JsonArray)"文字 · 保留格式标记"else"文字")},minLines=1)}
-  children!=null->{
-   val names=mapOf("doc" to "正文","paragraph" to "段落","heading" to "标题","bulletList" to "无序列表","orderedList" to "有序列表","listItem" to "列表项","table" to "表格","tableRow" to "行","tableCell" to "单元格","tableHeader" to "表头","blockquote" to "引用","codeBlock" to "代码块")
-   Column(Modifier.fillMaxWidth().padding(start=if(depth==0)0.dp else 6.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
-    if(type!="doc")Text(names[type]?:"保留节点 $type",style=MaterialTheme.typography.labelMedium)
-    children.forEachIndexed{index,child->if(child is JsonObject)RichNodeEditor(child,depth+1){updated->onChange(JsonObject(node+("content" to JsonArray(children.toMutableList().apply{set(index,updated)}))))}}
-    if(children.isEmpty()&&type in listOf("paragraph","heading","codeBlock"))OutlinedButton({onChange(JsonObject(node+("content" to buildJsonArray{add(buildJsonObject{put("type","text");put("text","新文字")})})))}){Text("添加文字")}
-    if(type=="doc")OutlinedButton({onChange(JsonObject(node+("content" to JsonArray(children+buildJsonObject{put("type","paragraph");put("content",buildJsonArray{add(buildJsonObject{put("type","text");put("text","新段落")})})}))))}){Text("添加段落")}
-   }
-  }
-  type=="hardBreak"->Text("↵",style=MaterialTheme.typography.bodySmall)
-  else->Text("${if(type.isBlank())"附加"else type}节点 · 已保留${node.obj("attrs").text("label").takeIf{it.isNotBlank()}?.let{"：$it"}.orEmpty()}",style=MaterialTheme.typography.bodySmall)
- }
-}
-
-/** A narrow edit changes one text leaf while retaining every sibling and metadata value. */
-internal fun editRichText(node:JsonObject,indices:List<Int>,text:String):JsonObject{
- if(indices.isEmpty()){require(node.text("type")=="text"){"Only text nodes can be changed"};return JsonObject(node+("text" to JsonPrimitive(text)))}
- val children=node["content"]as? JsonArray?:error("Missing rich document content")
- val index=indices.first();require(index in children.indices){"Text position outside document"}
- val child=children[index]as? JsonObject?:error("Invalid document node")
- return JsonObject(node+("content" to JsonArray(children.toMutableList().apply{set(index,editRichText(child,indices.drop(1),text))})))
+internal fun editRichText(node:JsonObject,indices:List<Int>,text:String):JsonObject {
+    if(indices.isEmpty()){require(node.text("type")=="text"){"Only text nodes can be changed"};return JsonObject(node+("text" to JsonPrimitive(text)))}
+    return richChangeAt(node,indices){editRichText(it,emptyList(),text)}
 }
