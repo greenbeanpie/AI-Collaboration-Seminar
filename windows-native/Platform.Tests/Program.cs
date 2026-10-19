@@ -66,6 +66,14 @@ try
     var source = Path.Combine(temp, "upload.txt"); await File.WriteAllTextAsync(source, "abcdef");
     await upload.UploadAsync(Guid.NewGuid().ToString(), Guid.NewGuid().ToString(), source);
     if (uploadHandler.UploadedParts != 1 || !uploadHandler.Completed) throw new Exception("Multipart resume did not skip the persisted server part.");
+    var uncertainHandler = new UploadHandler { FailCompletionOnce = true };
+    using var uncertainHttp = new HttpClient(uncertainHandler) { BaseAddress = new Uri("https://test.invalid") };
+    var uncertainUpload = new NativeTransfers(uncertainHttp, temp, gate);
+    var uncertainProject = Guid.NewGuid().ToString(); var uncertainFile = Guid.NewGuid().ToString();
+    try { await uncertainUpload.UploadAsync(uncertainProject, uncertainFile, source); throw new Exception("Expected simulated response loss."); }
+    catch (HttpRequestException) { }
+    await uncertainUpload.UploadAsync(uncertainProject, uncertainFile, source);
+    if (uncertainHandler.Begins != 1 || uncertainHandler.UploadedParts != 1) throw new Exception("Lost completion response replayed upload instead of reconciling durable session.");
 }
 finally { Directory.Delete(temp, true); }
 Console.WriteLine("PASS: production fixture, tampering, activity/restart gate, path confinement, range resume, hash failure preservation and multipart resume.");
@@ -89,18 +97,20 @@ sealed class UploadHandler : HttpMessageHandler
     private readonly string session = Guid.NewGuid().ToString();
     public int UploadedParts { get; private set; }
     public bool Completed { get; private set; }
+    public bool FailCompletionOnce { get; init; }
+    public int Begins { get; private set; }
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var path = request.RequestUri!.AbsolutePath;
         string payload;
-        if (request.Method == HttpMethod.Post && path.EndsWith("/uploads")) payload = $"{{\"sessionId\":\"{session}\",\"partBytes\":3}}";
-        else if (request.Method == HttpMethod.Get) payload = "{\"status\":\"uploading\",\"parts\":[{\"partNumber\":1,\"sizeBytes\":3}]}";
+        if (request.Method == HttpMethod.Post && path.EndsWith("/uploads")) { Begins++; payload = $"{{\"sessionId\":\"{session}\",\"partBytes\":3}}"; }
+        else if (request.Method == HttpMethod.Get) payload = Completed ? "{\"status\":\"complete\"}" : "{\"status\":\"uploading\",\"partBytes\":3,\"parts\":[{\"partNumber\":1,\"sizeBytes\":3}]}";
         else if (request.Method == HttpMethod.Put)
         {
             if (!path.EndsWith("/parts/2") || request.Headers.GetValues("X-Part-Size").Single() != "3" || await request.Content!.ReadAsStringAsync(cancellationToken) != "def") throw new Exception("Bad multipart chunk.");
             UploadedParts++; payload = "{}";
         }
-        else if (path.EndsWith("/complete")) { Completed = true; payload = "{}"; }
+        else if (path.EndsWith("/complete")) { Completed = true; if (FailCompletionOnce) throw new HttpRequestException("Simulated response loss after server commit."); payload = "{}"; }
         else throw new Exception("Unexpected upload request.");
         return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"data\":" + payload + "}", Encoding.UTF8, "application/json") };
     }

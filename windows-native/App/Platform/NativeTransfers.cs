@@ -17,13 +17,23 @@ public sealed class NativeTransfers(HttpClient http, string accountDirectory, Ac
         var digest = Convert.ToHexString(await SHA256.HashDataAsync(source, ct)); source.Position = 0;
         Directory.CreateDirectory(accountDirectory);
         var journal = Path.Combine(accountDirectory, $"upload-{project}-{file}.json");
+        JsonNode? previous = null;
         if (File.Exists(journal))
         {
-            var old = JsonNode.Parse(await File.ReadAllTextAsync(journal, ct));
-            if (old?["sha256"]?.GetValue<string>() != digest) throw new InvalidOperationException("源文件已变化，请创建新的文件上传，不得覆盖原上传会话。");
+            previous = JsonNode.Parse(await File.ReadAllTextAsync(journal, ct));
+            if (previous?["sha256"]?.GetValue<string>() != digest) throw new InvalidOperationException("源文件已变化，请创建新的文件上传，不得覆盖原上传会话。");
         }
         var basis = $"/api/v1/projects/{project}/files/{file}/uploads";
-        var init = await JsonAsync(HttpMethod.Post, basis, new JsonObject { ["sizeBytes"] = source.Length }, ct);
+        // Reconcile the durable session before allocating/resuming: after a lost complete response the
+        // file is already available, so beginMultipart correctly refuses it as no longer pending.
+        JsonObject init;
+        if (Guid.TryParse(previous?["sessionId"]?.GetValue<string>(), out var priorSession))
+        {
+            var prior = await JsonAsync(HttpMethod.Get, $"{basis}/{priorSession}", null, ct);
+            if (prior["status"]?.GetValue<string>() == "complete") { File.Delete(journal); progress?.Report(1); return; }
+            init = new JsonObject { ["sessionId"] = priorSession.ToString(), ["partBytes"] = prior["partBytes"]?.DeepClone() };
+        }
+        else init = await JsonAsync(HttpMethod.Post, basis, new JsonObject { ["sizeBytes"] = source.Length }, ct);
         var sessionId = Guid.Parse(init["sessionId"]!.GetValue<string>());
         var partBytes = init["partBytes"]!.GetValue<int>();
         if (partBytes < 1 || partBytes > 100_000_000) throw new InvalidDataException("服务器分片大小无效。");
