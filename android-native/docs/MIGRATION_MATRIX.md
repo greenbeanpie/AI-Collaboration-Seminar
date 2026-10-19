@@ -1,6 +1,6 @@
 # 安卓原生迁移矩阵
 
-记录日期：2026-10-19。依据本轮集成工作区源码核对，版本为 `0.2.1-preview`（versionCode `3`）。本表记录已接入的原生业务能力与待验收边界，不代替 [最新验证报告](../VERIFICATION.md)。
+记录日期：2026-10-19。依据本轮集成工作区源码核对，版本为 `0.2.2-preview`（versionCode `4`）。本表记录已接入的原生业务能力与待验收边界，不代替 [最新验证报告](../VERIFICATION.md)。
 
 应用使用 Kotlin、Jetpack Compose 和 Material 3，业务界面不依赖 WebView。`FeatureScreen` 已按业务分派至专用 Workspace；通用 API 操作表单已从业务导航移除。所有业务继续对接现有后端，权限、固定版本、生命周期及幂等规则由服务端判定。源码具备入口、自动化路径通过和真实业务验收通过是不同状态，不能据此直接宣称全量迁移目标完成。
 
@@ -8,7 +8,7 @@
 
 | 领域 | 当前实现 | 验收边界 |
 |---|---|---|
-| 工程与版本 | 独立 `android-native/`；最低 API 26，编译/目标 API 37；`0.2.1-preview`、code `3`；预览包 `cn.buwei.mobile.nativepreview`，Debug 带 `.debug` | 与旧 `cn.buwei.mobile` 并存；不自动读取旧应用私有草稿或录制目录；最低版本物理设备未验收 |
+| 工程与版本 | 独立 `android-native/`；最低 API 26，编译/目标 API 37；`0.2.2-preview`、code `4`；预览包 `cn.buwei.mobile.nativepreview`，Debug 带 `.debug` | 与旧 `cn.buwei.mobile` 并存；不自动读取旧应用私有草稿或录制目录；最低版本物理设备未验收 |
 | 界面与导航 | Compose、Material 3、绿色品牌主题；浅色/深色/跟随系统；手机底部导航和平板侧栏；项目分区和授权后深链接定位 | 仍需字体缩放、键盘、无障碍、厂商系统及大数据交互验收；模拟器截图不能代表全部设备 |
 | 网络与状态 | ViewModel、StateFlow、Repository；OkHttp 同源会话；响应正文读取与解析在 IO 调度器执行；项目/账户变化检查 | 真实弱网、切网、长时间后台与跨设备恢复需独立验证 |
 | 本机数据 | Room 快照及有序待同步队列、账户私有原子草稿和原文件、加密会话、DataStore 外观偏好 | 缓存不代表持续授权；权限撤销、账号切换与首次离线深链接需按真实场景验收 |
