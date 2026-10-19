@@ -61,7 +61,10 @@ $manifest = [ordered]@{
     scenarioDescription='Anonymous production login page or empty tray. No account login, model calls, session clearing or GUI automation.'
     comparisonBoundary='Comparable only when both binaries are Release, use the same production origin and are anonymous. This does not measure authenticated projects, documents, uploads, recording or voice.'
     samplingBoundary='Complete observed root/descendant process tree, including observed WebView subprocesses. Sampling may miss processes whose entire lifetime falls between samples; working-set sum includes shared pages more than once.'
-    candidates=@($candidates | ForEach-Object { @{label=$_.Label;path=$_.Path;version=(Get-Item -LiteralPath $_.Path).VersionInfo.FileVersion;sha256=(Get-FileHash -LiteralPath $_.Path -Algorithm SHA256).Hash;isolation=$_.Isolation} })
+    candidates=@($candidates | ForEach-Object {
+        $assembly = [IO.Path]::ChangeExtension($_.Path, '.dll')
+        @{label=$_.Label;path=$_.Path;version=(Get-Item -LiteralPath $_.Path).VersionInfo.FileVersion;sha256=(Get-FileHash -LiteralPath $_.Path -Algorithm SHA256).Hash;managedAssemblySha256=if(Test-Path -LiteralPath $assembly){(Get-FileHash -LiteralPath $assembly -Algorithm SHA256).Hash}else{$null};arguments=@($_.Arguments);isolation=$_.Isolation}
+    })
 }
 $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $outputPath 'manifest.json') -Encoding utf8NoBOM
 foreach ($candidate in $candidates) {
