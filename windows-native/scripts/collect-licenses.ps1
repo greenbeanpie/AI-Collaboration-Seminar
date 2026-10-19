@@ -23,6 +23,32 @@ $targetNames = @($assets.targets.Keys | Where-Object { $_ -match '/win-x64$' })
 if ($targetNames.Count -eq 0) { $targetNames = @($assets.targets.Keys) }
 $targetLibraries = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 foreach ($target in $targetNames) { foreach ($key in $assets.targets[$target].Keys) { [void]$targetLibraries.Add($key) } }
+# Self-contained framework packs are downloaded separately, outside assets.libraries.
+# Use exact restore versions and evidence in publish output; never select the newest cache folder.
+$runtimePacks = @{}
+$runtimeMarkers = @{'Microsoft.NETCore.App.Runtime.win-x64'='coreclr.dll'; 'Microsoft.WindowsDesktop.App.Runtime.win-x64'='PresentationFramework.dll'; 'Microsoft.AspNetCore.App.Runtime.win-x64'='Microsoft.AspNetCore.dll'}
+function AddRuntimePack([string]$name, [string]$version, [string]$evidence) {
+    $key = "$name/$version"
+    if ($runtimePacks.ContainsKey($key)) { return }
+    $runtimePacks[$key] = @{marker=$runtimeMarkers[$name];evidence=$evidence}
+    $assets.libraries[$key] = @{type='package';path=($name.ToLowerInvariant()+'/'+$version);files=@('LICENSE.TXT','THIRD-PARTY-NOTICES.TXT');sha512=''}
+    [void]$targetLibraries.Add($key)
+}
+foreach ($framework in $assets.project.frameworks.Values) {
+    foreach ($dependency in $framework.downloadDependencies) {
+        if (-not $runtimeMarkers.ContainsKey($dependency.name) -or -not $publishedNames.Contains($runtimeMarkers[$dependency.name])) { continue }
+        if ($dependency.version -notmatch '^\[([^,\]]+)(?:,\s*([^\]]+))?\]$') { throw "Runtime pack version is not exact: $($dependency.name) $($dependency.version)" }
+        $version=$Matches[1].Trim(); $upper=$Matches[2]
+        if ($upper -and $upper.Trim() -ne $version) { throw "Runtime pack has unresolved version range: $($dependency.name)" }
+        AddRuntimePack $dependency.name $version 'assets.project.frameworks.downloadDependencies + published runtime marker'
+    }
+}
+if ($publishedNames.Contains('coreclr.dll') -and -not @($runtimePacks.Keys | Where-Object { $_ -like 'Microsoft.NETCore.App.Runtime.win-x64/*' }).Count) {
+    $coreclr=Get-ChildItem -LiteralPath $publish -Filter coreclr.dll -File -Recurse | Select-Object -First 1
+    $product=[Diagnostics.FileVersionInfo]::GetVersionInfo($coreclr.FullName).ProductVersion
+    if ($product -match '^(\d+\.\d+\.\d+)(?:\+|$)') { AddRuntimePack 'Microsoft.NETCore.App.Runtime.win-x64' $Matches[1] 'published coreclr.dll ProductVersion' }
+    else { $missing.Add('Published coreclr.dll found but exact runtime pack version cannot be identified') }
+}
 function MetadataText($metadata, [string]$name) { $node = $metadata.SelectSingleNode("*[local-name()='$name']"); if ($node) { return $node.InnerText }; return '' }
 foreach ($key in @($assets.libraries.Keys | Sort-Object)) {
     $library = $assets.libraries[$key]
@@ -42,7 +68,12 @@ foreach ($key in @($assets.libraries.Keys | Sort-Object)) {
     }
     $record.publishedAssets = @($record.publishedAssets | Sort-Object -Unique)
     if ($record.publishedAssets.Count -gt 0) { $record.scope = 'matched-published-runtime-assets' }
+    if ($runtimePacks.ContainsKey($key)) { $record.scope='self-contained-framework-runtime-pack'; $record.publishedAssets=@($runtimePacks[$key].marker); $record.discovery=$runtimePacks[$key].evidence }
     if (-not $cache) { $record.missing += 'NuGet cache directory'; $missing.Add("$key cache missing"); $records.Add($record); continue }
+    if ($runtimePacks.ContainsKey($key)) {
+        $hash=Get-ChildItem -LiteralPath $cache -Filter '*.nupkg.sha512' -File | Select-Object -First 1
+        if ($hash) { $record.nugetSha512=(Get-Content -LiteralPath $hash.FullName -Raw).Trim() }
+    }
     $destination = Join-Path $directory ($id + '/' + $version); New-Item -ItemType Directory -Force -Path $destination | Out-Null
     $nuspec = Get-ChildItem -LiteralPath $cache -Filter '*.nuspec' -File | Select-Object -First 1
     if (-not $nuspec) { $record.missing += 'nuspec'; $missing.Add("$key nuspec missing"); $records.Add($record); continue }
@@ -68,7 +99,7 @@ foreach ($key in @($assets.libraries.Keys | Sort-Object)) {
     foreach ($relative in @($files | Sort-Object -Unique)) {
         $source = [IO.Path]::GetFullPath((Join-Path $cache $relative))
         if (-not $source.StartsWith($cache.TrimEnd('\','/') + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw "Package license path escaped cache: $key" }
-        if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { $record.missing += "Declared file: $relative"; continue }
+        if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { $record.missing += "Declared file: $relative"; $missing.Add("$key declared license/notice file missing: $relative"); continue }
         $output = Join-Path $destination $relative; New-Item -ItemType Directory -Force -Path ([IO.Path]::GetDirectoryName($output)) | Out-Null
         Copy-Item -LiteralPath $source -Destination $output -Force
         $record.files += [IO.Path]::GetRelativePath($publish,$output).Replace('\','/')
