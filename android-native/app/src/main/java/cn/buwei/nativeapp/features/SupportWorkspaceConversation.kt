@@ -13,7 +13,8 @@ import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
 
 @Composable internal fun SupportWorkspaceConversation(repository:ClientRepository,ticketId:String){
- val owner=repository.accountId;val epoch=remember(owner){repository.epoch};val scope=rememberCoroutineScope();val drafts=remember(repository){NativeDraftStore(repository)};val key="support-reply:$ticketId";val path="/api/v1/support/tickets/$ticketId"
+ val account by repository.account.collectAsState()
+ val owner=account?.get("id")?.jsonPrimitive?.contentOrNull;val epoch=remember(owner){repository.epoch};val scope=rememberCoroutineScope();val drafts=remember(repository){NativeDraftStore(repository)};val key="support-reply:$ticketId";val path="/api/v1/support/tickets/$ticketId"
  var ticket by remember(owner,ticketId){mutableStateOf<JsonObject?>(null)};var messages by remember(owner,ticketId){mutableStateOf<List<JsonObject>>(emptyList())};var cursor by remember(owner,ticketId){mutableStateOf<String?>(null)};var body by remember(owner,ticketId){mutableStateOf("")};var uncertain by remember(owner,ticketId){mutableStateOf(false)};var loaded by remember(owner,ticketId){mutableStateOf(false)};var selectedStatus by remember(owner,ticketId){mutableStateOf("")};var busy by remember{mutableStateOf(false)};var error by remember{mutableStateOf<String?>(null)};var confirmation by remember{mutableStateOf<String?>(null)}
  suspend fun persist(){drafts.save(key,buildJsonObject{put("body",body);put("uncertain",uncertain)},owner?:error("请登录"),epoch)}
  suspend fun get(url:String)=repository.networkJson("GET",url,expectedOwner=owner,expectedEpoch=epoch)
@@ -26,7 +27,7 @@ import kotlinx.serialization.json.*
  ticket?.let{value->
   Text(value.text("title"),style=MaterialTheme.typography.titleLarge);Text("提交人：${value.text("ownerName")} · ${supportStatuses.firstOrNull{it.first==value.text("status")}?.second.orEmpty()}");Text(value.text("body"));Text("紧急度：${supportUrgencies.firstOrNull{it.first==value.text("urgency")}?.second.orEmpty()} · 分类：${supportCategories.firstOrNull{it.first==value.text("category")}?.second.orEmpty()}")
   (value["images"]as? JsonArray).orEmpty().forEach{SupportWorkspaceImage(repository,ticketId,it.jsonObject)}
-  if(repository.account.value?.text("role")in listOf("admin","super_admin")){CreationChoice("管理员处理状态",selectedStatus.ifBlank{value.text("status")},supportStatuses){selectedStatus=it};Button({confirmation="status"},enabled=!busy&&selectedStatus.isNotBlank()&&selectedStatus!=value.text("status")){Text("保存工单状态")}}
+  if(account?.text("role")in listOf("admin","super_admin")){CreationChoice("管理员处理状态",selectedStatus.ifBlank{value.text("status")},supportStatuses){selectedStatus=it};Button({confirmation="status"},enabled=!busy&&selectedStatus.isNotBlank()&&selectedStatus!=value.text("status")){Text("保存工单状态")}}
   Text("回复与状态历史",style=MaterialTheme.typography.titleMedium);messages.forEach{message->Card(Modifier.fillMaxWidth()){Column(Modifier.padding(10.dp)){Text("${message.text("authorName")} · ${message.text("createdAt")}");Text(if(message.text("kind")=="status")"状态更新为：${supportStatuses.firstOrNull{it.first==message.text("status")}?.second.orEmpty()}"else message.text("body"))}}}
   if(cursor!=null)OutlinedButton({action{loadMessages(true)}},enabled=!busy){Text("加载后续回复")}
   if(value.text("status")=="closed")Text("此工单已关闭。管理员重新打开后可继续回复。")else{

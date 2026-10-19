@@ -18,14 +18,15 @@ import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
 
 @Composable fun AccountWorkspace(repository:ClientRepository){
- val owner=repository.accountId;val epoch=remember(owner){repository.epoch};val scope=rememberCoroutineScope()
- var name by remember(owner){mutableStateOf(repository.account.value?.text("displayName").orEmpty())};var currentPassword by remember(owner){mutableStateOf("")};var newPassword by remember(owner){mutableStateOf("")};var repeatPassword by remember(owner){mutableStateOf("")};var email by remember(owner){mutableStateOf("")};var emailPassword by remember(owner){mutableStateOf("")};var token by remember(owner){mutableStateOf("")};var emailStatus by remember(owner){mutableStateOf<JsonObject?>(null)};var capabilities by remember{mutableStateOf<JsonObject?>(null)};var busy by remember{mutableStateOf(false)};var error by remember{mutableStateOf<String?>(null)};var notice by remember{mutableStateOf("")};var confirm by remember{mutableStateOf<String?>(null)}
+ val account by repository.account.collectAsState()
+ val owner=account?.get("id")?.jsonPrimitive?.contentOrNull;val epoch=remember(owner){repository.epoch};val scope=rememberCoroutineScope()
+ var name by remember(owner){mutableStateOf(account?.text("displayName").orEmpty())};var currentPassword by remember(owner){mutableStateOf("")};var newPassword by remember(owner){mutableStateOf("")};var repeatPassword by remember(owner){mutableStateOf("")};var email by remember(owner){mutableStateOf("")};var emailPassword by remember(owner){mutableStateOf("")};var token by remember(owner){mutableStateOf("")};var emailStatus by remember(owner){mutableStateOf<JsonObject?>(null)};var capabilities by remember{mutableStateOf<JsonObject?>(null)};var busy by remember{mutableStateOf(false)};var error by remember{mutableStateOf<String?>(null)};var notice by remember{mutableStateOf("")};var confirm by remember{mutableStateOf<String?>(null)}
  fun action(block:suspend ()->Unit){if(busy)return;busy=true;error=null;notice="";scope.launch{try{check(repository.accountId==owner&&repository.epoch==epoch){"账户已变化"};block()}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}finally{busy=false}}}
  suspend fun reloadEmail(){emailStatus=accountWorkspaceRequest(repository,"GET","/api/v1/auth/recovery-email",owner=owner,epoch=epoch)}
  LaunchedEffect(owner){try{reloadEmail();capabilities=repository.networkJson("GET","/api/v1/capabilities",expectedOwner=owner,expectedEpoch=epoch)}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}}
  fun browser(path:String){CustomTabsIntent.Builder().build().apply{intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)}.launchUrl(repository.context,Uri.parse(BuildConfig.SERVICE_ORIGIN+path))}
  Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
-  Text("账户与个人资料",style=MaterialTheme.typography.headlineSmall);Text("登录账号：${repository.account.value?.text("username").orEmpty()}")
+  Text("账户与个人资料",style=MaterialTheme.typography.headlineSmall);Text("登录账号：${account?.text("username").orEmpty()}")
   error?.let{Text(it,color=MaterialTheme.colorScheme.error)};if(notice.isNotBlank())Text(notice);if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
   OutlinedTextField(name,{name=it},label={Text("昵称（1–64字）")},modifier=Modifier.fillMaxWidth());Button({action{require(name.trim().length in 1..64);accountWorkspaceRequest(repository,"PATCH","/api/v1/auth/profile",buildJsonObject{put("displayName",name.trim())},owner,epoch);repository.validateSession();notice="昵称已保存"}},enabled=!busy&&name.isNotBlank()){Text("保存昵称")}
   AccountWorkspacePersonalProfile(repository)

@@ -2,6 +2,7 @@ package cn.buwei.nativeapp.features
 
 import android.content.Context
 import android.net.Uri
+import android.os.StatFs
 import android.provider.OpenableColumns
 import cn.buwei.nativeapp.data.ClientRepository
 import cn.buwei.nativeapp.media.DocumentReader
@@ -19,7 +20,7 @@ internal object CreationDocuments {
  suspend fun stage(context:Context,uri:Uri,owner:String):File=withContext(Dispatchers.IO){
   val name=context.contentResolver.query(uri,arrayOf(OpenableColumns.DISPLAY_NAME),null,null,null)?.use{if(it.moveToFirst())it.getString(0)else null}?:"资料"
   val dir=File(context.filesDir,"creation-files/$owner").apply{mkdirs()};val file=File(dir,UUID.randomUUID().toString()+"-"+creationSafeFileName(name));val partial=File(file.path+".partial")
-  try{context.contentResolver.openInputStream(uri)!!.use{input->partial.outputStream().use{output->val buffer=ByteArray(65536);var total=0L;while(true){ensureActive();val n=input.read(buffer);if(n<0)break;total+=n;require(total<=512L*1024*1024){"文件超过 512 MiB"};require(dir.usableSpace>64L*1024*1024){"存储空间不足，需保留 64 MiB"};output.write(buffer,0,n)}}};check(partial.renameTo(file)){"无法保存原文件"};file}finally{partial.delete()}
+  try{context.contentResolver.openInputStream(uri)!!.use{input->partial.outputStream().use{output->val buffer=ByteArray(65536);var total=0L;while(true){ensureActive();val n=input.read(buffer);if(n<0)break;total+=n;require(total<=512L*1024*1024){"文件超过 512 MiB"};require(StatFs(dir.path).availableBytes>=64L*1024*1024+n){"存储空间不足，需保留 64 MiB"};output.write(buffer,0,n)}}};check(partial.renameTo(file)){"无法保存原文件"};file}finally{partial.delete()}
  }
  suspend fun upload(repository:ClientRepository,draft:JsonObject,file:File,progress:(String)->Unit):JsonObject=withContext(Dispatchers.IO){
   val owner=repository.accountId?:error("请先登录");val epoch=repository.epoch
