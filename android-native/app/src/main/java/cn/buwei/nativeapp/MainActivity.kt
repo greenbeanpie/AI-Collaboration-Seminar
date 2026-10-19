@@ -152,7 +152,7 @@ class MainActivity:ComponentActivity() {
             Text("原生安卓预览版",style=MaterialTheme.typography.headlineSmall)
             Text("使用原有账户登录。仅登录验证在系统浏览器完成，项目界面使用安卓原生组件。旧版未同步资料仍保留在旧版中。",Modifier.padding(vertical=16.dp))
             Button(onClick={ lifecycleScope.launch { busy=true; try { val url=auth.begin(); CustomTabsIntent.Builder().build().launchUrl(this@MainActivity,url.toUri()) } catch(e:Exception) { fatal=e.message } finally { busy=false } } },modifier=Modifier.fillMaxWidth()) {Text("登录 / 注册")}
-            Text("首次使用需要网络；登录服务需部署配套原生授权接口。",Modifier.padding(top=16.dp),style=MaterialTheme.typography.bodySmall)
+            Text("首次登录需要联网，并在系统浏览器中完成账户验证。",Modifier.padding(top=16.dp),style=MaterialTheme.typography.bodySmall)
         }
     }
     @Composable private fun ProjectNavigation() {
