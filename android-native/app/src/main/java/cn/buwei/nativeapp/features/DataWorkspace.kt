@@ -44,13 +44,14 @@ internal fun dataStatus(status:String)=mapOf("pending" to "尚未开始","queued
  }
 }
 @Composable private fun DataWorkspaceDetail(repository:ClientRepository,project:String,type:String,id:String,refresh:Int,onMaterialAi:()->Unit,onChanged:()->Unit){
- val base=twBase(project);var resource by remember(type,id){mutableStateOf<JsonObject?>(null)};var error by remember{mutableStateOf<String?>(null)}
- LaunchedEffect(type,id,refresh){try{resource=repository.get("$base/resource-library/$type/${Uri.encode(id)}");error=null}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}}
+ val base=twBase(project);var resource by remember(type,id){mutableStateOf<JsonObject?>(null)};var error by remember{mutableStateOf<String?>(null)};var localRefresh by remember(type,id){mutableIntStateOf(0)}
+ LaunchedEffect(type,id,refresh,localRefresh){try{resource=repository.get("$base/resource-library/$type/${Uri.encode(id)}");error=null}catch(e:CancellationException){throw e}catch(e:Exception){if(e.taskReadAccessDenied())resource=null;error=(e.message?:"读取失败")+if(resource!=null)"；当前显示上次读取内容，请重试核对。"else""}}
+ TextButton({localRefresh++}){Text("刷新当前资料")}
  error?.let{Text(it,color=MaterialTheme.colorScheme.error)};val row=resource?:return
  Text(row.twText("title"),style=MaterialTheme.typography.titleLarge);NativeAiReferenceBadge();Text("${dataPurposes.firstOrNull{it.first==row.twText("purpose")}?.second.orEmpty()} · 创建于 ${row.twText("createdAt")}")
  if(type=="material")OutlinedButton(onMaterialAi){Text("AI 补位与成果采纳")}
  if(row.dataFlag("canManage")&&row.twText("archivedAt").isBlank()&&row.twText("deletedAt").isBlank()){var purpose by rememberSaveable(id,row.twText("revision")){mutableStateOf(row.twText("purpose"))};TaskWorkspaceChoice("修改资料用途",dataPurposes,purpose){purpose=it};TaskWorkspaceAction(repository,"保存资料用途","$base/resource-library/$type/$id",buildJsonObject{put("purpose",purpose);put("expectedRevision",twRevision(row))},"PATCH",confirmation="修改用途可能按项目配置继续后台文件处理，请核对后保存。",onSuccess={resource=it;onChanged()})}
- if(type=="material")DataWorkspaceMaterial(repository,project,row,refresh,onChanged)else DataWorkspaceSource(repository,project,row,refresh,onChanged)
+ if(type=="material")DataWorkspaceMaterial(repository,project,row,refresh+localRefresh,onChanged)else DataWorkspaceSource(repository,project,row,refresh+localRefresh,onChanged)
 }
 @Composable internal fun DataWorkspaceContributors(row:JsonObject){val people=row.twRows("contributors");if(people.isNotEmpty())Text("贡献者："+people.joinToString("、"){it.twText("displayName").ifBlank{it.twText("username")}})}
 @Composable internal fun DataWorkspaceLifecycle(repository:ClientRepository,base:String,kind:String,id:String,name:String,lifecycle:Int,deleted:Boolean,onChanged:()->Unit){
@@ -70,16 +71,17 @@ internal fun dataStatus(status:String)=mapOf("pending" to "尚未开始","queued
 }
 @Composable private fun DataWorkspaceMaterial(repository:ClientRepository,project:String,resource:JsonObject,refresh:Int,onChanged:()->Unit){
  val base=twBase(project);val path="$base/materials/${resource.twText("resourceId")}";var material by remember(path){mutableStateOf<JsonObject?>(null)};var error by remember{mutableStateOf<String?>(null)}
- LaunchedEffect(path,refresh){try{material=repository.get(path);error=null}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}};error?.let{Text(it,color=MaterialTheme.colorScheme.error)};val row=material?:return
+ LaunchedEffect(path,refresh){try{material=repository.get(path);error=null}catch(e:CancellationException){throw e}catch(e:Exception){if(e.taskReadAccessDenied())material=null;error=(e.message?:"读取失败")+if(material!=null)"；当前显示上次读取内容，请重试核对。"else""}};error?.let{Text(it,color=MaterialTheme.colorScheme.error)};val row=material?:return
  if(row.dataFlag("systemManaged"))Text("系统背景由服务端同步，仅供查看。");val version=row["currentVersion"] as? JsonObject
  if(version!=null){Text("当前正文 · 第 ${version.twText("revision")} 版",style=MaterialTheme.typography.titleMedium);NativeAiReferenceBadge();DataWorkspaceVersionContent(version);version.twRows("attachments").forEach{file->DataWorkspaceContributors(file);if(file.twText("availability")=="unavailable")Text("${file.twText("name")}（原文件不可用）")else AttachmentActions(repository,project,file.twText("fileId"),file.twText("name"))};DataWorkspaceReference(repository,project,"material",version.twText("versionId"))}
  if(row.dataFlag("canEdit")&&row.twText("archivedAt").isBlank())NativeRichMaterialEditor(repository,path,row)
  if(row.dataFlag("canArchive")){val archived=row.twText("archivedAt").isNotBlank();TaskWorkspaceAction(repository,if(archived)"撤销材料归档"else"归档材料","$path/${if(archived)"unarchive"else"archive"}",buildJsonObject{put("expectedRevision",twRevision(row))},confirmation=if(archived)"恢复这份材料？"else"归档材料将退出当前资料选择，历史固定版本保留。",onSuccess={onChanged()})}
  DataWorkspaceVersions(repository,project,row)
+ MaterialDiscussionWorkspace(repository,project,resource.twText("resourceId"))
 }
 @Composable private fun DataWorkspaceSource(repository:ClientRepository,project:String,resource:JsonObject,refresh:Int,onChanged:()->Unit){
  val base=twBase(project);val path="$base/sources/${resource.twText("resourceId")}";var source by remember(path){mutableStateOf<JsonObject?>(null)};var version by remember(path){mutableStateOf<JsonObject?>(null)};var error by remember{mutableStateOf<String?>(null)}
- LaunchedEffect(path,refresh){try{val record=repository.get(path);source=record;version=record.twText("currentVersionId").takeIf{it.isNotBlank()}?.let{repository.get("$path/versions/$it")};error=null}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}}
+ LaunchedEffect(path,refresh){try{val record=repository.get(path);val current=record.twText("currentVersionId").takeIf{it.isNotBlank()}?.let{repository.get("$path/versions/$it")};source=record;version=current;error=null}catch(e:CancellationException){throw e}catch(e:Exception){if(e.taskReadAccessDenied()){source=null;version=null};error=(e.message?:"读取失败")+if(source!=null)"；当前显示上次读取内容，请重试核对。"else""}}
  error?.let{Text(it,color=MaterialTheme.colorScheme.error)};val row=source?:return;DataWorkspaceContributors(row);Text("来源类型：${mapOf("file" to "文件","web" to "公开网页","paste" to "粘贴文本")[row.twText("kind")].orEmpty()}");val fileId=row.twText("fileId")
  if(fileId.isNotBlank())AttachmentActions(repository,project,fileId,row.twText("title"))
  version?.let{current->Text("原文版本 ${current.twText("revision")} · ${dataStatus(current.twText("status"))} · ${current.twText("pageCount").ifBlank{"无固定页数"}} · ${current.twText("charCount")} 字符");if(current.twText("parseError").isNotBlank())Text(current.twText("parseError"),color=MaterialTheme.colorScheme.error);Text("提取方式：${current.twText("extractionMethod")} · 覆盖情况：${current.twText("extractionCoverage")}");current.twIds("extractionWarnings").forEach{Text(it,color=MaterialTheme.colorScheme.error)};DataWorkspaceReference(repository,project,"source",current.twText("sourceVersionId"));DataWorkspaceSourceProcessing(repository,project,row,current,onChanged)}
