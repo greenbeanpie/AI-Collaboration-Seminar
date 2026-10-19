@@ -8,7 +8,9 @@ public sealed record Snapshot(JsonNode? Data, DateTimeOffset SavedAt);
 
 public sealed class LocalStore : IDisposable
 {
-    private readonly SemaphoreSlim gate = new(1);
+    private readonly object gate = new();
+    private Task tail = Task.CompletedTask;
+    private bool disposed;
     private string account = "anonymous";
     public string DataDirectory { get; }
     public string? AccountId => account == "anonymous" ? null : account;
@@ -19,9 +21,13 @@ public sealed class LocalStore : IDisposable
     {
         // Capture the account-owned file before waiting; a switch must never redirect old writes.
         var file = Database;
+        Task previous;
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        // Reserve FIFO position on the caller thread before dispatching to the thread pool.
+        lock (gate) { ObjectDisposedException.ThrowIf(disposed, this); previous = tail; tail = completion.Task; }
         return Task.Run(async () =>
         {
-        await gate.WaitAsync().ConfigureAwait(false);
+        await previous.ConfigureAwait(false);
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(file)!);
@@ -39,7 +45,7 @@ public sealed class LocalStore : IDisposable
             await init.ExecuteNonQueryAsync().ConfigureAwait(false);
             return await action(connection).ConfigureAwait(false);
         }
-        finally { gate.Release(); }
+        finally { completion.SetResult(); }
         });
     }
     private static SqliteCommand Command(SqliteConnection connection, string sql, params (string, object?)[] values)
@@ -144,5 +150,5 @@ public sealed class LocalStore : IDisposable
     });
     public Task<bool> IsRevokedAsync(string project) => UseAsync(async c => { using var cmd = Command(c, "SELECT count(*) FROM revoked WHERE project=$p", ("$p", project)); return (long)(await cmd.ExecuteScalarAsync())! != 0; });
     public async Task RestoreAccessAsync(string project) => await UseAsync(async c => { using var cmd = Command(c, "DELETE FROM revoked WHERE project=$p", ("$p", project)); return await cmd.ExecuteNonQueryAsync(); });
-    public void Dispose() => gate.Dispose();
+    public void Dispose() { lock (gate) disposed = true; }
 }

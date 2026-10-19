@@ -13,7 +13,8 @@ $publishPath = (Resolve-Path -LiteralPath $PublishDirectory).Path
 $runtimePath = (Resolve-Path -LiteralPath $RuntimeInstaller).Path
 if (!(Test-Path -LiteralPath (Join-Path $publishPath 'Buwei.Windows.Native.exe'))) { throw 'Publish directory does not contain Buwei.Windows.Native.exe.' }
 if (!(Test-Path -LiteralPath (Join-Path $publishPath 'coreclr.dll'))) { throw 'Expected self-contained .NET publish output.' }
-if (Get-ChildItem -LiteralPath $publishPath -Recurse -Filter '*WebView2*') { throw 'WebView2 dependency is forbidden in the native package.' }
+$licensePath = Join-Path $publishPath 'licenses'
+if (Get-ChildItem -LiteralPath $publishPath -Recurse -Filter '*WebView2*' | Where-Object { !$_.FullName.StartsWith($licensePath + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) }) { throw 'WebView2 dependency is forbidden in the native package.' }
 $authenticode = Get-AuthenticodeSignature -LiteralPath $runtimePath
 if ($authenticode.Status -ne 'Valid' -or $authenticode.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') { throw 'Runtime installer must have a valid Microsoft Authenticode signature.' }
 $nsisCandidates = @((Join-Path $env:LOCALAPPDATA 'tauri/NSIS/makensis.exe'), 'C:\Program Files (x86)\NSIS\makensis.exe')

@@ -89,7 +89,9 @@ public sealed class ClientRepository : IDisposable
         try { await NetworkAsync("DELETE", "/api/v1/auth/session", null, null, ct); }
         finally { if (epoch == started + 1) ClearSession(); }
     }
-    public async Task<JsonNode?> GetAsync(string path, CancellationToken ct = default)
+    public Task<JsonNode?> GetAsync(string path, CancellationToken ct = default) => ReadAsync(path, true, ct);
+    public Task<JsonNode?> GetFreshAsync(string path, CancellationToken ct = default) => ReadAsync(path, false, ct);
+    private async Task<JsonNode?> ReadAsync(string path, bool allowCache, CancellationToken ct)
     {
         path = ClientPaths.Normalize(path); var started = epoch; var account = AccountId;
         try
@@ -103,7 +105,7 @@ public sealed class ClientRepository : IDisposable
             }
             return await OverlayAsync(path, data);
         }
-        catch (Exception ex) when (ex is HttpRequestException || ex is TaskCanceledException && !ct.IsCancellationRequested)
+        catch (Exception ex) when (allowCache && (ex is HttpRequestException || ex is TaskCanceledException && !ct.IsCancellationRequested))
         {
             Guard(started);
             if (account == null || !ClientPaths.Cacheable(path)) throw;

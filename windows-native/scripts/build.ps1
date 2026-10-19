@@ -14,6 +14,7 @@ try {
     if ($Debug) { & dotnet build App/Buwei.Windows.csproj -c $configuration -p:Platform=x64 --no-restore }
     else { & dotnet publish App/Buwei.Windows.csproj -c $configuration -p:Platform=x64 --no-restore -o artifacts/final }
     if ($LASTEXITCODE -ne 0) { throw 'Native build failed.' }
+    if (!$Debug) { & (Join-Path $PSScriptRoot 'collect-licenses.ps1') -PublishDirectory (Join-Path $nativeRoot 'artifacts/final') }
     if ($Package) {
         if ($Debug) { throw 'Debug synthetic fixture builds must never be packaged.' }
         if (!$RuntimeInstaller) { throw 'Provide the verified Microsoft Windows App Runtime 2.5.1 x64 installer.' }
