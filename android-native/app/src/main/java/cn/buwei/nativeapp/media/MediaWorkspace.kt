@@ -34,7 +34,7 @@ import org.json.JSONObject
 import java.io.File
 import java.util.UUID
 
-@Composable fun MediaWorkspace(repository:ClientRepository,projectId:String?) {
+@Composable fun MediaWorkspace(repository:ClientRepository,projectId:String?,onActivityChange:(Boolean)->Unit = {}) {
     val context=LocalContext.current;val scope=rememberCoroutineScope()
     val owner=repository.accountId?:return
     val root=File(context.filesDir,"accounts/$owner/attachments").apply {mkdirs()}
@@ -45,6 +45,9 @@ import java.util.UUID
     var microphone by remember {mutableStateOf("")};var camera by remember {mutableStateOf("")}
     var drafts by remember {mutableStateOf<List<File>>(emptyList())}
     var running by remember {mutableStateOf(RecordingService.instance!=null)}
+    val activityCallback by rememberUpdatedState(onActivityChange)
+    LaunchedEffect(running,busy){activityCallback(running||busy)}
+    DisposableEffect(Unit){onDispose{activityCallback(false)}}
     fun reload() { files=root.listFiles()?.filter {it.isFile&&!it.name.endsWith(".partial")}.orEmpty();drafts=File(context.dataDir,"recordings/$owner").listFiles()?.filter {File(it,"manifest.json").isFile}.orEmpty() }
     fun startRecording(kind:String) {
         if(projectId==null){progress="请先打开项目再录制";return}

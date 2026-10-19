@@ -13,13 +13,16 @@ import java.util.UUID
 
 class AttachmentTransfer(private val repository:ClientRepository) {
     private fun digest(file:File):String { val hash=MessageDigest.getInstance("SHA-256");file.inputStream().use {input->val b=ByteArray(65536);while(true){val n=input.read(b);if(n<0)break;hash.update(b,0,n)}};return hash.digest().joinToString(""){"%02x".format(it)} }
-    suspend fun upload(project:String,file:File,onProgress:(String)->Unit):String=upload(project,file,onProgress,"reference")
-    suspend fun upload(project:String,file:File,onProgress:(String)->Unit,purpose:String):String=withContext(Dispatchers.IO) {
-        require(purpose in listOf("reference","output")){"文件用途无效"}
+    suspend fun upload(project:String,file:File,onProgress:(String)->Unit):String=upload(project,file,onProgress,"reference",null)
+    suspend fun upload(project:String,file:File,onProgress:(String)->Unit,purpose:String):String=upload(project,file,onProgress,purpose,null)
+    suspend fun upload(project:String,file:File,onProgress:(String)->Unit,purpose:String,contributorIds:List<String>?):String=withContext(Dispatchers.IO) {
+        require(purpose in listOf("background","reference","output")){"文件用途无效"}
+        contributorIds?.let {ids->require(ids.isNotEmpty()&&ids.size==ids.distinct().size){"请选择有效且不重复的贡献者"};ids.forEach{require(UUID.fromString(it).toString()==it.lowercase()){ "贡献者标识无效" }}}
         val owner=repository.accountId?:error("请登录");val generation=repository.epoch
         fun assertOwner(){check(repository.accountId==owner&&repository.epoch==generation){"账户已变化，上传已停止"}}
         val identity=digest(file)
-        val manifestName=if(purpose=="reference")"$project-$identity.json"else"$project-$purpose-$identity.json"
+        val contributorIdentity=contributorIds?.sorted()?.joinToString(",")?.toByteArray()?.let{MessageDigest.getInstance("SHA-256").digest(it).joinToString(""){byte->"%02x".format(byte)}}
+        val manifestName=if(contributorIdentity!=null)"$project-$purpose-$contributorIdentity-$identity.json"else if(purpose=="reference")"$project-$identity.json"else"$project-$purpose-$identity.json"
         val manifest=AtomicFile(File(repository.context.filesDir,"accounts/$owner/transfers/$manifestName"))
         manifest.baseFile.parentFile?.mkdirs()
         var state=if(manifest.baseFile.exists()) repository.json.parseToJsonElement(manifest.openRead().bufferedReader().use {it.readText()}).jsonObject else JsonObject(emptyMap())
@@ -27,7 +30,7 @@ class AttachmentTransfer(private val repository:ClientRepository) {
         repository.validateSession();assertOwner()
         if(state["fileId"]==null) {
             val key=state["key"]?.jsonPrimitive?.content?:UUID.randomUUID().toString().also { save(buildJsonObject {put("key",it)}) }
-            val record=repository.request("POST","/projects/$project/files",buildJsonObject {put("fileName",file.name);put("purpose",purpose)},key,owner,generation)
+            val record=repository.request("POST","/projects/$project/files",buildJsonObject {put("fileName",file.name);put("purpose",purpose);contributorIds?.let{put("contributorIds",JsonArray(it.sorted().map(::JsonPrimitive)))}},key,owner,generation)
             save(buildJsonObject {put("key",key);put("fileId",record["fileId"]!!)})
         }
         val id=state["fileId"]!!.jsonPrimitive.content;val path="/projects/$project/files/$id/uploads"
