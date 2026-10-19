@@ -11,22 +11,31 @@ public sealed partial class WorkspaceView
     {
         membership = await repository.GetAsync(Base + "/members/me", token);
         var panel = Page("团队成员", "项目权限以当前成员身份为准，系统管理员身份不自动获得项目权限。");
+        var restores = new List<Task>();
         await AddPagedAsync(panel, Base + "/members?limit=100", member =>
         {
             var box = Ui.Stack(Ui.Label(member.Text("displayName"), 20), Ui.Label(member.Text("username")), Ui.Label(member.Text("role") == "owner" ? "项目负责人" : "项目成员"));
             var permissions = new Dictionary<string, CheckBox>();
+            FormDraft? memberDraft = null;
             foreach (var (key, label) in PermissionLabels)
             {
                 var check = new CheckBox { Content = label, IsChecked = member?["permissions"].Flag(key) == true || member.Text("role") == "owner", IsEnabled = membership.Text("role") == "owner" && member.Text("role") != "owner" };
                 permissions[key] = check; box.Children.Add(check);
             }
-            if (membership.Text("role") == "owner" && member.Text("role") != "owner") box.Children.Add(Action("保存成员权限", async () =>
-            { var body = new JsonObject(); foreach (var item in permissions) body[item.Key] = item.Value.IsChecked == true; await WriteAsync("PATCH", Base + "/members/" + Escape(member.Text("userId")) + "/permissions", new JsonObject { ["expectedRevision"] = member?["permissionsRevision"].Copy(), ["permissions"] = body }); await NavigateAsync("team"); }, "确认调整此成员的项目权限？"));
+            if (membership.Text("role") == "owner" && member.Text("role") != "owner")
+            {
+                async Task RestoreAsync() { memberDraft=await TrackFormAsync("member-permissions:"+projectId+":"+member.Text("userId"),permissions.ToDictionary(x=>x.Key,x=>(Control)x.Value),member?["permissionsRevision"]); }
+                restores.Add(RestoreAsync());
+                box.Children.Add(Action("保存成员权限", async () =>
+                { if(memberDraft==null)throw new InvalidOperationException("权限草稿尚未恢复，请稍后重试。");var submitted=memberDraft.Snapshot();var body = new JsonObject(); foreach (var item in permissions) body[item.Key] = item.Value.IsChecked == true; await WriteAsync("PATCH", Base + "/members/" + Escape(member.Text("userId")) + "/permissions", new JsonObject { ["expectedRevision"] = memberDraft.Identity.Copy(), ["permissions"] = body });await FinishFormAsync(memberDraft,submitted);draftDirty=false;saveCurrentDraft=null;await NavigateAsync("team"); }, "确认调整此成员的项目权限？"));
+            }
             if (Can("teamManage") && member.Text("role") != "owner" && member.Text("userId") != repository.AccountId) box.Children.Add(Action("移除成员", async () => { await WriteAsync("DELETE", Base + "/members/" + Escape(member.Text("userId"))); await NavigateAsync("team"); }, "移除后对方将失去此项目访问权限。"));
             return Ui.Card(box);
         }, token);
+        await Task.WhenAll(restores);
         var username = Ui.Field("对方用户名", max: 64);
-        panel.Children.Add(Ui.Card(Ui.Label("邀请成员", 20), username, Action("提交邀请申请", async () => { if (username.Text.Trim().Length == 0) return; await WriteAsync("POST", Base + "/invitation-requests", new JsonObject { ["username"] = username.Text.Trim() }); await NavigateAsync("team"); })));
+        var invitationDraft=await TrackFormAsync("invitation-request:"+projectId,new(){["username"]=username});
+        panel.Children.Add(Ui.Card(Ui.Label("邀请成员", 20), username, Action("提交邀请申请", async () => { if (username.Text.Trim().Length == 0) return;var submitted=invitationDraft.Snapshot();await WriteAsync("POST", Base + "/invitation-requests", new JsonObject { ["username"] = username.Text.Trim() });await FinishFormAsync(invitationDraft,submitted);draftDirty=false;saveCurrentDraft=null;await NavigateAsync("team"); })));
         await AddPagedAsync(panel, Base + "/invitation-requests?limit=50", row =>
         {
             var box = Ui.Stack(Ui.Label(row.Text("username"), 18), Ui.Label(Ui.Status(row.Text("status"))));
@@ -36,6 +45,7 @@ public sealed partial class WorkspaceView
         if (Can("teamManage"))
         {
             var maxUses = Ui.Field("邀请码使用次数（留空不限，1–100）", max: 3); var days = Ui.Field("有效天数（1–30）", "7", max: 2); var result = Ui.Label("");
+            await TrackFormAsync("invitation-code-options:"+projectId,new(){["maxUses"]=maxUses,["days"]=days});
             panel.Children.Add(Ui.Card(Ui.Label("创建邀请码", 20), maxUses, days, result, Action("创建邀请码", async () =>
             {
                 if (!int.TryParse(days.Text, out var duration) || duration < 1 || duration > 30) throw new InvalidOperationException("有效天数应为 1–30。");

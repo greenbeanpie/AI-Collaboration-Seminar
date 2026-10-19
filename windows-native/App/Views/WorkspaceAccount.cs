@@ -28,7 +28,8 @@ public sealed partial class WorkspaceView
         var panel = Page("通知", "通知可单独标为已读或收起；列表按服务端分页读取。");
         var settings = await repository.GetAsync("/notifications/settings", token);
         var inApp = new ToggleSwitch { Header = "站内通知", IsOn = settings.Flag("inAppEnabled") }; var push = new ToggleSwitch { Header = "系统通知", IsOn = settings.Flag("pushEnabled") };
-        panel.Children.Add(Ui.Card(inApp, push, Action("保存通知设置", async () => { await WriteAsync("PUT", "/notifications/settings", new JsonObject { ["inAppEnabled"] = inApp.IsOn, ["pushEnabled"] = push.IsOn }); }), Action("全部标为已读", async () => { await WriteAsync("POST", "/notifications/read-all"); await NavigateAsync("notifications"); })));
+        var preferences=await TrackFormAsync("notification-preferences",new(){["inAppEnabled"]=inApp,["pushEnabled"]=push});
+        panel.Children.Add(Ui.Card(inApp, push, Action("保存通知设置", async () => {var submitted=preferences.Snapshot();await WriteAsync("PUT", "/notifications/settings", new JsonObject { ["inAppEnabled"] = inApp.IsOn, ["pushEnabled"] = push.IsOn });await FinishFormAsync(preferences,submitted);draftDirty=false;saveCurrentDraft=null;await NavigateAsync("notifications");}), Action("全部标为已读", async () => { await WriteAsync("POST", "/notifications/read-all"); await NavigateAsync("notifications"); })));
         await AddPagedAsync(panel, "/notifications?limit=50", row =>
         {
             var box = Ui.Stack(Ui.Label(row.Text("title"), 18), Ui.Label(row.Text("body")), Ui.Label(row.Text("createdAt")));
@@ -66,7 +67,8 @@ public sealed partial class WorkspaceView
         var panel = Page(ticket.Text("title"), Ui.Status(ticket.Text("status"))); panel.Children.Add(Ui.Label(ticket.Text("body")));
         await AddPagedAsync(panel, path + "/messages?limit=30", row => Ui.Card(Ui.Label(row.Id("authorName", "senderName")), Ui.Label(row.Text("body")), Ui.Label(row.Text("createdAt"))), token);
         var message = Ui.Field("回复内容", "", true, 8000);
-        panel.Children.Add(Ui.Card(message, Action("发送回复", async () => { if (string.IsNullOrWhiteSpace(message.Text)) return; await repository.Store.SaveDraftAsync("support-reply:" + id, new JsonObject { ["body"] = message.Text }); await WriteAsync("POST", path + "/messages", new JsonObject { ["body"] = message.Text.Trim() }); await repository.Store.DeleteDraftAsync("support-reply:" + id); await ReplaceAsync(ct => SupportConversationAsync(id, ct)); })));
+        var replyDraft=await TrackFormAsync("support-reply:"+id,new(){["body"]=message});
+        panel.Children.Add(Ui.Card(message, Action("发送回复", async () => { if (string.IsNullOrWhiteSpace(message.Text)) return;var submitted=replyDraft.Snapshot();await WriteAsync("POST", path + "/messages", new JsonObject { ["body"] = message.Text.Trim() });await FinishFormAsync(replyDraft,submitted);draftDirty=false;saveCurrentDraft=null;await ReplaceAsync(ct => SupportConversationAsync(id, ct));})));
         if (repository.User.Text("role") is "admin" or "super_admin")
         {
             var status = Ui.Choice("处理状态", [("pending", "待处理"), ("in_progress", "处理中"), ("waiting_user", "待用户回复"), ("resolved", "已解决"), ("closed", "已关闭")], ticket.Text("status"));

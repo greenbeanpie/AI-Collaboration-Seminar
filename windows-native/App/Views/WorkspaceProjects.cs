@@ -101,20 +101,20 @@ public sealed partial class WorkspaceView
     }
     private async Task<UIElement> ProjectSettingsAsync(CancellationToken token)
     {
-        var current = await repository.GetAsync(Base, token); var goal = await repository.GetAsync(Base + "/goal", token);
-        var panel = Page("项目设置", "所有修改携带读取时的版本，发生冲突时保留当前输入。");
+        var current = await repository.GetAsync(Base, token); var goal = await repository.GetAsync(Base + "/goal", token); var collaboration = await repository.GetAsync(Base + "/collaboration/settings", token);
+        var panel = Page("项目设置", "本机草稿保留原始版本；服务端变化时拒绝覆盖并保留输入。"); var edit = membership.Text("role") == "owner";
         var name = Ui.Field("项目名称", current.Text("name"), max: 100); var description = Ui.Field("项目说明", current.Text("description"), true, 2000);
-        var title = Ui.Field("项目主目标", goal.Text("title"), max: 200); var detail = Ui.Field("目标说明", goal.Text("detail"), true);
-        var edit = membership.Text("role") == "owner";
-        var save = Action("保存项目信息", async () => { await WriteAsync("PATCH", Base, new JsonObject { ["expectedRevision"] = current?["revision"].Copy(), ["name"] = name.Text.Trim(), ["description"] = description.Text.Trim() }); await NavigateAsync("project-settings"); }); save.IsEnabled = edit;
-        panel.Children.Add(Ui.Card(name, description, save));
-        var saveGoal = Action("保存主目标", async () => { await WriteAsync("PATCH", Base + "/goal", new JsonObject { ["expectedRevision"] = goal?["revision"].Copy(), ["title"] = title.Text.Trim(), ["detail"] = detail.Text.Trim() }); await NavigateAsync("project-settings"); }); saveGoal.IsEnabled = edit;
-        panel.Children.Add(Ui.Card(title, detail, saveGoal));
-        var collaboration = await repository.GetAsync(Base + "/collaboration/settings", token); var enabled = new ToggleSwitch { Header = "启用本项目 AI 协作", IsOn = collaboration.Flag("aiCollaborationEnabled"), IsEnabled = edit }; var options = new Dictionary<string, ComboBox>(); var settings = Ui.Stack(Ui.Label("AI 协作规则", 20), enabled);
-        foreach (var (key, label) in new[] { ("planningMode", "任务规划"), ("assignmentMode", "任务分工"), ("evaluationMode", "提交验收"), ("progressionMode", "项目推进") }) { var box = Ui.Choice(label, [("manual", "负责人事先确认"), ("automatic", "允许 AI 自动应用")], collaboration.Text(key)); box.IsEnabled = edit; options[key] = box; settings.Children.Add(box); }
-        var saveRules = Action("保存 AI 协作规则", async () => { var body = new JsonObject { ["expectedRevision"] = collaboration?["revision"].Copy(), ["aiCollaborationEnabled"] = enabled.IsOn }; foreach (var option in options) body[option.Key] = option.Value.Value(); await WriteAsync("PATCH", Base + "/collaboration/settings", body); await NavigateAsync("project-settings"); }, "自动模式可能使后续 AI 规划、分工、验收或推进自动生效。确认保存？"); saveRules.IsEnabled = edit; settings.Children.Add(saveRules); panel.Children.Add(Ui.Card(settings));
-        if (!edit) panel.Children.Add(Action("退出项目", async () => { await WriteAsync("DELETE", Base + "/members/me"); projectId = null; project = null; membership = null; BuildNavigation(); await NavigateAsync("projects"); }, "退出后失去此项目访问权限，原项目数据保留。本机未同步内容不会提交。"));
-        if (edit) panel.Children.Add(Action(current.Text("status") == "archived" ? "恢复项目" : "归档项目", async () => { await WriteAsync("PATCH", Base, new JsonObject { ["expectedRevision"] = current?["revision"].Copy(), ["status"] = current.Text("status") == "archived" ? "active" : "archived" }); await NavigateAsync("project-settings"); }, "更新项目归档状态？项目数据和历史记录会保留。"));
+        var basic = await TrackFormAsync("project-basic:" + projectId, new() { ["name"] = name, ["description"] = description }, current?["revision"]);
+        var save = Action("保存项目信息", async () => { var submitted = basic.Snapshot(); await WriteAsync("PATCH", Base, new JsonObject { ["expectedRevision"] = basic.Identity.Copy(), ["name"] = name.Text.Trim(), ["description"] = description.Text.Trim() }); await FinishFormAsync(basic, submitted); draftDirty = false; saveCurrentDraft = null; await NavigateAsync("project-settings"); }); save.IsEnabled = edit; panel.Children.Add(Ui.Card(name, description, save));
+        var title = Ui.Field("项目主目标", goal.Text("title"), max: 200); var detail = Ui.Field("目标说明", goal.Text("detail"), true,12000);
+        var target = await TrackFormAsync("project-goal:" + projectId, new() { ["title"] = title, ["detail"] = detail }, goal?["revision"]);
+        var saveGoal = Action("保存主目标", async () => { var submitted = target.Snapshot(); await WriteAsync("PATCH", Base + "/goal", new JsonObject { ["expectedRevision"] = target.Identity.Copy(), ["title"] = title.Text.Trim(), ["detail"] = detail.Text.Trim() }); await FinishFormAsync(target, submitted); draftDirty = false; saveCurrentDraft = null; await NavigateAsync("project-settings"); }); saveGoal.IsEnabled = edit; panel.Children.Add(Ui.Card(title, detail, saveGoal));
+        var enabled = new ToggleSwitch { Header = "启用本项目 AI 协作", IsOn = collaboration.Flag("aiCollaborationEnabled"), IsEnabled = edit }; var options = new Dictionary<string, Control> { ["aiCollaborationEnabled"] = enabled }; var settings = Ui.Stack(Ui.Label("AI 协作规则", 20), enabled);
+        foreach (var (key,label) in new[] { ("planningMode","任务规划"),("assignmentMode","任务分工"),("evaluationMode","提交验收"),("progressionMode","项目推进") }) { var box = Ui.Choice(label,[("manual","负责人事先确认"),("automatic","允许 AI 自动应用")],collaboration.Text(key)); box.IsEnabled=edit; options[key]=box; settings.Children.Add(box); }
+        var rules = await TrackFormAsync("project-collaboration:" + projectId, options, collaboration?["revision"]);
+        var saveRules=Action("保存 AI 协作规则",async()=>{var submitted=rules.Snapshot();var body=submitted["fields"]!.DeepClone().AsObject();body["expectedRevision"]=rules.Identity.Copy();await WriteAsync("PATCH",Base+"/collaboration/settings",body);await FinishFormAsync(rules,submitted);draftDirty=false;saveCurrentDraft=null;await NavigateAsync("project-settings");},"自动模式可能使后续 AI 规划、分工、验收或推进自动生效。确认保存？");saveRules.IsEnabled=edit;settings.Children.Add(saveRules);panel.Children.Add(Ui.Card(settings));
+        if(!edit)panel.Children.Add(Action("退出项目",async()=>{await WriteAsync("DELETE",Base+"/members/me");projectId=null;project=null;membership=null;BuildNavigation();await NavigateAsync("projects");},"退出后失去此项目访问权限，原项目数据保留。本机未同步内容不会提交。"));
+        if(edit)panel.Children.Add(Action(current.Text("status")=="archived"?"恢复项目":"归档项目",async()=>{await WriteAsync("PATCH",Base,new JsonObject{["expectedRevision"]=current?["revision"].Copy(),["status"]=current.Text("status")=="archived"?"active":"archived"});await NavigateAsync("project-settings");},"更新项目归档状态？项目数据和历史记录保留。"));
         return panel;
     }
 }

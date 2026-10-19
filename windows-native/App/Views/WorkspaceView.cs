@@ -241,4 +241,39 @@ public sealed partial class WorkspaceView : UserControl
             finally { draftWrites.Remove(pending); }
         }
     }
+    private sealed record FormDraft(string Key, Dictionary<string, Control> Fields, JsonNode? Identity)
+    {
+        public JsonObject Snapshot()
+        {
+            var values = new JsonObject();
+            foreach (var (key, control) in Fields) values[key] = control switch { TextBox text => JsonValue.Create(text.Text), ComboBox choice => JsonValue.Create(choice.Value()), CheckBox check => JsonValue.Create(check.IsChecked == true), ToggleSwitch toggle => JsonValue.Create(toggle.IsOn), _ => null };
+            return new JsonObject { ["identity"] = Identity.Copy(), ["fields"] = values };
+        }
+    }
+    private async Task<FormDraft> TrackFormAsync(string key, Dictionary<string, Control> fields, JsonNode? identity = null)
+    {
+        var token = PageToken; var owner = repository.AccountId;
+        var saved = await repository.Store.LoadDraftAsync(key); token.ThrowIfCancellationRequested();
+        if (owner != repository.AccountId) throw new OperationCanceledException();
+        foreach (var (name, control) in fields)
+        {
+            var value = saved?["fields"]?[name]; if (value == null) continue;
+            switch (control)
+            {
+                case TextBox text: text.Text = value.ToString(); break;
+                case ComboBox choice: choice.SelectedItem = choice.Items.OfType<ComboBoxItem>().FirstOrDefault(x => x.Tag?.ToString() == value.ToString()); break;
+                case CheckBox check: check.IsChecked = value.ToString() == "true"; break;
+                case ToggleSwitch toggle: toggle.IsOn = value.ToString() == "true"; break;
+            }
+        }
+        var form = new FormDraft(key, fields, saved?["identity"].Copy() ?? identity.Copy());
+        TrackDraft(key, form.Snapshot, fields.Values.ToArray()); return form;
+    }
+    private async Task FinishFormAsync(FormDraft form, JsonObject submitted)
+    {
+        await Task.WhenAll(draftWrites.ToArray());
+        // Preserve typing that happened while the request was in flight, including its original base version.
+        if (!JsonNode.DeepEquals(form.Snapshot(), submitted)) { await repository.Store.SaveDraftAsync(form.Key, form.Snapshot()); return; }
+        await repository.Store.DeleteDraftAsync(form.Key);
+    }
 }

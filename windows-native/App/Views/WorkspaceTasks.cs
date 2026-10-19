@@ -110,7 +110,7 @@ public sealed partial class WorkspaceView
     {
         var panel = Page("任务讨论", "讨论对当前项目可见。"); var path = Base + "/comments";
         await AddPagedAsync(panel, path + "?targetType=task&targetId=" + Escape(id) + "&limit=50", row => Ui.Card(Ui.Label(row.Text("authorName")), Ui.Label(row.Text("body")), Ui.Label(row.Text("createdAt"))), token);
-        var text = Ui.Field("讨论内容", "", true); panel.Children.Add(Ui.Card(text, Action("发表评论", async () => { if (string.IsNullOrWhiteSpace(text.Text)) return; await WriteAsync("POST", path, new JsonObject { ["targetType"] = "task", ["targetId"] = id, ["body"] = text.Text.Trim() }); await ReplaceAsync(ct => TaskCommentsAsync(id, ct)); })));
+        var text = Ui.Field("讨论内容", "", true);var commentDraft=await TrackFormAsync("task-comment:"+projectId+":"+id,new(){["body"]=text});panel.Children.Add(Ui.Card(text, Action("发表评论", async () => { if (string.IsNullOrWhiteSpace(text.Text)) return;var submitted=commentDraft.Snapshot();await WriteAsync("POST", path, new JsonObject { ["targetType"] = "task", ["targetId"] = id, ["body"] = text.Text.Trim() });await FinishFormAsync(commentDraft,submitted);draftDirty=false;saveCurrentDraft=null;await ReplaceAsync(ct => TaskCommentsAsync(id, ct)); })));
         return panel;
     }
     private async Task<UIElement> TaskAssignmentAsync(JsonNode? task, CancellationToken token)
@@ -132,17 +132,21 @@ public sealed partial class WorkspaceView
     private async Task<UIElement> TaskInquiriesAsync(string id, CancellationToken token)
     {
         var panel = Page("任务私密问询", "仅向所选成员发送；服务端按任务及参与人隔离消息。"); var path = Base + "/tasks/" + Escape(id) + "/inquiries";
+        var restores=new List<Task>();
         await AddPagedAsync(panel, path + "?limit=50", row =>
         {
             var replies = Ui.Stack(Ui.Label(row.Id("senderName", "recipientName"), 18));
             foreach (var message in row.Rows("messages")) replies.Children.Add(Ui.Label(message.Text("body")));
             var response = Ui.Field("回复此问询", "", true);
-            replies.Children.Add(response); replies.Children.Add(Action("发送回复", async () => { if (string.IsNullOrWhiteSpace(response.Text)) return; await WriteAsync("POST", Base + "/task-inquiries/" + Escape(row.Text("inquiryId")) + "/messages", new JsonObject { ["body"] = response.Text.Trim() }); await ReplaceAsync(ct => TaskInquiriesAsync(id, ct)); }));
+            FormDraft? replyDraft=null;async Task RestoreAsync(){replyDraft=await TrackFormAsync("inquiry-reply:"+projectId+":"+row.Text("inquiryId"),new(){["body"]=response});}restores.Add(RestoreAsync());
+            replies.Children.Add(response); replies.Children.Add(Action("发送回复", async () => { if (string.IsNullOrWhiteSpace(response.Text)) return;if(replyDraft==null)throw new InvalidOperationException("回复草稿尚未恢复。");var submitted=replyDraft.Snapshot();await WriteAsync("POST", Base + "/task-inquiries/" + Escape(row.Text("inquiryId")) + "/messages", new JsonObject { ["body"] = response.Text.Trim() });await FinishFormAsync(replyDraft,submitted);draftDirty=false;saveCurrentDraft=null;await ReplaceAsync(ct => TaskInquiriesAsync(id, ct)); }));
             return Ui.Card(replies);
         }, token);
+        await Task.WhenAll(restores);
         var members = (await repository.GetAsync(Base + "/members?limit=100", token)).Rows().Where(m => m.Text("userId") != repository.AccountId);
         var recipient = Ui.Choice("接收成员", members.Select(m => (m.Text("userId"), m.Text("displayName")))); var body = Ui.Field("问询内容", "", true);
-        panel.Children.Add(Ui.Card(recipient, body, Action("发起私密问询", async () => { if (recipient.Value().Length == 0 || string.IsNullOrWhiteSpace(body.Text)) throw new InvalidOperationException("请选择成员并填写问询内容。"); await WriteAsync("POST", path, new JsonObject { ["recipientId"] = recipient.Value(), ["body"] = body.Text.Trim() }); await ReplaceAsync(ct => TaskInquiriesAsync(id, ct)); }, "确认发送给所选成员？")));
+        var inquiryDraft=await TrackFormAsync("inquiry-create:"+projectId+":"+id,new(){["recipientId"]=recipient,["body"]=body});
+        panel.Children.Add(Ui.Card(recipient, body, Action("发起私密问询", async () => { if (recipient.Value().Length == 0 || string.IsNullOrWhiteSpace(body.Text)) throw new InvalidOperationException("请选择成员并填写问询内容。");var submitted=inquiryDraft.Snapshot();await WriteAsync("POST", path, new JsonObject { ["recipientId"] = recipient.Value(), ["body"] = body.Text.Trim() });await FinishFormAsync(inquiryDraft,submitted);draftDirty=false;saveCurrentDraft=null;await ReplaceAsync(ct => TaskInquiriesAsync(id, ct)); }, "确认发送给所选成员？")));
         return panel;
     }
 }
