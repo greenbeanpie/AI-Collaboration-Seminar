@@ -5,6 +5,7 @@ import android.content.Context
 import cn.buwei.nativeapp.data.ClientRepository
 import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.GoogleApiAvailability
+import com.google.android.gms.tasks.Task
 import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.CoroutineScope
@@ -28,7 +29,7 @@ object NativePushRegistration {
         }
         if (repository.accountId == null) return
         val accountId = repository.accountId
-        FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
+        legacyRegistrationToken().addOnSuccessListener { token ->
             scope.launch {
                 if (repository.accountId == accountId) {
                     try { repository.registerPushToken(token) }
@@ -38,6 +39,14 @@ object NativePushRegistration {
             }
         }.addOnFailureListener { repository.status.value = "即时通知连接失败；站内通知与后台补查仍可使用" }
     }
+
+    // The current manifest keeps Firebase's default registration-token mode and the backend
+    // stores/sends that token. register() is not a drop-in replacement: it throws without
+    // firebase_messaging_installation_id_enabled=true and reports an FID via onRegistered().
+    // Keep this compatibility use isolated until manifest + server contracts migrate together.
+    // https://firebase.google.com/docs/reference/android/com/google/firebase/messaging/FirebaseMessaging#register()
+    @Suppress("DEPRECATION")
+    private fun legacyRegistrationToken(): Task<String> = FirebaseMessaging.getInstance().token
 
     /** Call before clearing an account; the server separately revokes session-bound devices. */
     fun clearNotifications(context: Context) {

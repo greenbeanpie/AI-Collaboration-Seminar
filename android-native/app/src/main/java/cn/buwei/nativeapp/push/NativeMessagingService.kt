@@ -20,6 +20,10 @@ import java.util.UUID
 class NativeMessagingService : FirebaseMessagingService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    // Intentional legacy-token callback. Firebase register()/onRegistered() requires the
+    // installation-ID manifest opt-in and a coordinated FID backend contract migration.
+    // https://firebase.google.com/docs/reference/android/com/google/firebase/messaging/FirebaseMessaging#register()
+    @Deprecated("Legacy registration-token compatibility; migrate manifest and backend FID contracts together")
     override fun onNewToken(token: String) {
         completeCallback {
             val repository = (application as NativeApplication).repository
