@@ -1,6 +1,47 @@
 # 原生 Android 迁移预览版验证报告
 
-## 当前交付：0.2.2-preview（2026-10-19）
+## 当前交付：0.2.3-preview（2026-10-20）
+
+本轮继续按网页端实际交互核对缺口，补齐讨论、资料正文与首页任务入口；仍对接既有后端，真实账户授权和外部服务验收尚未闭环，不声明全量迁移目标完成。下方各旧版本仅作为历史记录。
+
+### 本轮改动
+
+- 首页待响应事项移除 30 条上限，用惰性列表展示全部已加载记录，直接打开指定任务；归档视图增加任务列表和详情入口。保留项目分页及统计完整性提示。
+- 资料当前正文和历史版本均优先渲染该版本 canonical `doc`，保留表格、行内格式及原生内部链接，Markdown 仅作旧响应回退；合法空文档不会恢复旧 Markdown。版本比较读取 canonical 正文，并明确提示纯格式/结构差异。
+- 新增材料讨论，任务讨论复用同一流程：现有项目 comments 接口、分页、4000 字输入、账户/项目/目标隔离的持久本机草稿。待同步或结果不明时保留草稿及原操作身份，禁止再次创建；不把 queued 当成已发送。发送前释放焦点并收起键盘。
+- 资料详情、材料、来源版本、目录原文和通用分页在明确 401/403/404 后清除相应内存内容；普通读取失败保留并标记上次内容。历史版本成对读取后才更新，不在新版本失败时继续显示旧选择。
+
+主要代码：[首页](app/src/main/java/cn/buwei/nativeapp/features/ProjectDashboardWorkspace.kt)、[资料](app/src/main/java/cn/buwei/nativeapp/features/DataWorkspace.kt)、[版本与原文](app/src/main/java/cn/buwei/nativeapp/features/DataWorkspaceReference.kt)、[共用讨论](app/src/main/java/cn/buwei/nativeapp/features/MaterialDiscussionWorkspace.kt)、[任务接入](app/src/main/java/cn/buwei/nativeapp/features/TaskWorkspace.kt)、[分页读取](app/src/main/java/cn/buwei/nativeapp/features/TaskWorkspaceSupport.kt)。对应测试位于 JVM / androidTest 的 Dashboard、DataDocumentParity、DataReadAccess、MaterialDiscussion、TaskDiscussion、DataWorkspace 和 NativeBusiness 类。
+
+### 签名包与实际验证范围
+
+- [Release APK](../output/android-native/buwei-native-0.2.3-preview-release.apk)：5,553,365 bytes（约 5.30 MiB），versionCode 5，独立包名 `cn.buwei.mobile.nativepreview`，Android 8+、ARM64 / x86_64。
+- SHA-256：`33fe72775624045ca5933573938a6f53df8f468e73f5504de74802d5fe925a92`。
+- [构建元数据](../output/android-native/release-artifact.json)：源提交 `a063621d2710843a2ddea47aff6e331a415fbc17`，`sourceTreeDirty=false`；后续仅调整测试及文档，生产源码未变。复用原有签名，v2/v3 验证通过。
+- [主分支 Release 构建](../output/android-native/tests/0.2.3-main-release.log)通过：148 项 JVM 测试、Lint、R8/资源压缩、签名。Lint 为 0 errors、1 项既有 BouncyCastle EST 依赖告警，`-checkdiscard` 检查未保留 EST；工具链弃用提示仍存在。
+- 同轮基础完整 instrumentation 123 项：[API 33 平板](../output/android-native/tests/0.2.3-full-tablet.log)全部通过，333.653 秒；[API 37 手机](../output/android-native/tests/0.2.3-full-phone.log)122 项通过、1 项聊天等待失败，342.107 秒。该完整套件发生在最后的讨论共用调整之前，不能写成最终全套双端通过。
+- 最后针对受影响的 5 个测试类（材料讨论 9、任务讨论 11、任务工作区 8、NativeBusiness 7、canonical 资料 5）完整执行 **40 项相关回归**：[手机 40/40](../output/android-native/tests/0.2.3-related-phone.log)，97.289 秒；[平板 40/40](../output/android-native/tests/0.2.3-related-tablet.log)，109.937 秒。包含真实任务讨论入口、失败/queued 保稿、跨目标/账户隔离及修正后的对话轮询；不是最终全套复跑。其余读取拒权与首页用例见上述基础完整记录。全部为 Debug、隔离账号和本机模拟服务，不代表生产账户或 R8 下全部业务验收。
+- 路由检查 11 项通过，311 个生成契约一致；[静态请求结果](../output/android-native/final-routes-0.2.3.json)为 185 个绑定、135 个独立操作、错误 0，另有 185 个动态绑定未由静态检查验证。不能换算为业务完成率。
+- 整合主分支同期 Windows 授权扩展后，后端 [native-auth 10 项](../output/android-native/tests/0.2.3-auth-backend.log)、网页 [授权页 14 项](../output/android-native/tests/0.2.3-auth-frontend.log)及两端类型检查通过。Android 仍使用原默认授权客户端。本工作流没有部署这次并行扩展或应用新增 0081 迁移，不能据源码推断其生产状态。
+- 最终签名包已覆盖安装到手机和平板 `localhost:5555`：[手机冒烟](../output/android-native/smoke-20261020-000624/report.json)、[平板冒烟](../output/android-native/smoke-20261020-000951/report.json)通过，UI WebView 均为 0；[同一 APK 的 DEX 扫描](../output/android-native/smoke-20261020-000315/report.json)引用为空。两张最终登录页截图已查看，无裁切或横向溢出。没有卸载旧应用或清理用户数据。
+
+### 失败诊断与修复边界
+
+先前源文档测试同时提供空 canonical doc 和非空 Markdown，却要求旧 Markdown 差异，已将 fixture 的 canonical 正文修正一致；空文档不恢复旧文字另有独立回归。新增来源拒权 fixture 最初缺少处理状态的必需 summaryRevision，补齐后通过，未删减断言。
+
+手机聊天等待失败的原诊断又在 `printToString()` 等待空闲时抛错，覆盖最初证据，已改为安全采集。模拟作业“完成”原本依赖虚拟化卡片触发 job GET，而测试在答案未生成时不断滚动查找。现在显式显示一次作业卡片，确认第一次 GET 后允许模拟完成，等待后续真实轮询和答案响应，再定位答案；不增加超时、不忽略异常、不修改生产实现。最后两台设备相关组均已通过；这证明修正步骤下的流程，不宣称任何潜在 Compose 间歇问题均被排除。
+
+平板第一次 40 项相关组在第 39 项采集截图时中断，不能计为通过。[崩溃记录](../output/android-native/tests/0.2.3-tablet-screenshot-crash.log)显示 shell `am instrument` 进程在 BlueStacks 的 `lib_renderControl_enc.so` / gralloc / ScreenCaptureResults 路径 SIGSEGV，随后 UiAutomation 断连。新增 canonical 截图改为显式参数 `-e captureCanonical true`，正常回归不强制截图；保留所有功能断言。重跑 40 项全部通过，原[中断日志](../output/android-native/tests/0.2.3-related-tablet-interrupted.log)保留。图形驱动问题不代表原生业务断言成功，也不能当成真实手机稳定性证据。
+
+[当前正文手机样本](../output/android-native/tests/0.2.3-canonical-phone.png)、[历史正文手机样本](../output/android-native/tests/0.2.3-history-phone.png)和此前成功采集的平板样本已查看，确认正文、下划线与表格单元格可读、内部链接通过原生路由。它们为隔离测试宿主截图，不能替代完整应用的系统栏、无障碍或所有布局验收。
+
+### 资源采样与剩余验收
+
+[最终 Release 五轮原始采样](../output/android-native/benchmark-20261020-000718-emulator-5556/report.json)核对已安装哈希一致，非 Debug。API 37 模拟器未登录页：进程冷启动 TotalTime 中位数 **557 ms**（508–837），PSS 中位数 **28,057 KiB**（27,913–28,089），短窗口空闲 CPU 中位数 **0%**（0–0.327%）。使用 `-NativeOnly`，没有操作旧应用；未清理存储或编译缓存，主机有并行模拟器负载。不能据此声称真实业务耗电、更快可交互时间或相对旧版的资源节省比例。
+
+用户暂不方便完成 Turnstile，本轮没有再次尝试生产登录，也未调用付费模型、OCR/语音、发送 FCM 或修改生产业务数据。真实授权回调/退出撤销、FCM 实际投递、模型/语音、DSH、四小时物理录制及可比业务负载等仍按 [验收清单](docs/ACCEPTANCE.md) 独立完成。原有 0078–0080 发布与备份记录见历史报告；不将过去部署记录等同于当前全部源码已部署。复现命令见 [README](README.md)。
+
+## 历史交付：0.2.2-preview（不代表当前状态）
 
 当前版本继续使用现有后端与账号体系。原生业务界面使用 Kotlin / Compose / Material 3；完整迁移目标仍需完成真实授权和外部服务验收，不能以接口数量或模拟测试代替。
 
@@ -8,7 +49,7 @@
 
 - [签名 Release APK](../output/android-native/buwei-native-0.2.2-preview-release.apk)：5,536,981 bytes（约 5.28 MiB），versionCode 4，独立包名 `cn.buwei.mobile.nativepreview`。
 - SHA-256：`91e1dc28ef3fe665be28ba31b611d34de49e4bea2f5a75679b91ba313bc7518b`。
-- [构建元数据](../output/android-native/release-artifact.json)：来源提交 `ba8857a370339c4a0347ebee9705afcf2feb4fb2`，`sourceTreeDirty=false`。后续修改仅涉及验证脚本和文档，无需重建 APK。复用已有签名，v2/v3 校验通过。
+- [历史构建元数据](../output/android-native/0.2.2-release-artifact.json)：来源提交 `ba8857a370339c4a0347ebee9705afcf2feb4fb2`，`sourceTreeDirty=false`。后续修改仅涉及验证脚本和文档，无需重建 APK。复用已有签名，v2/v3 校验通过。
 - [主分支 Release 构建](../output/android-native/tests/0.2.2-main-release.log)通过：143 项 JVM 测试、Lint、R8/资源压缩与签名。Lint 为 0 errors、1 项既有 BouncyCastle EST 依赖告警，未打包的 EST 代码由 `-checkdiscard` 检查；工具链仍有弃用提示。
 - 完整 instrumentation：API 37 手机 [101 项通过](../output/android-native/tests/0.2.2-phone.log)，220.591 秒；API 33 平板 `localhost:5555` [101 项通过](../output/android-native/tests/0.2.2-tablet.log)，270.002 秒。使用本机模拟服务与隔离账号，未访问生产业务。测试业务源码为 `2ba5f6ee`；最终 APK 其后仅改登录说明、文档与测试，最终登录页另用签名包冒烟核对。
 - 最终签名包在[手机](../output/android-native/smoke-20261019-233850/report.json)和[平板](../output/android-native/smoke-20261019-234424/report.json)初始登录页冒烟通过，UI WebView 节点均为 0；同一哈希 APK 全部 DEX 未发现 WebView 引用。两张最终截图均已查看，无裁切或横向溢出。原应用和用户数据保留。

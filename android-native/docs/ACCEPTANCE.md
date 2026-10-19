@@ -1,6 +1,6 @@
 # 原生客户端验收限制与验证清单
 
-记录日期：2026-10-19。本文件定义证据的适用范围及后续验收步骤。当前源码版本为 `0.2.3-preview`（versionCode `5`）；最新构建、测试数量、签名、SHA-256、来源提交和 dirty 标志统一以 [VERIFICATION.md](../VERIFICATION.md) 为准。
+记录日期：2026-10-20。本文件定义证据的适用范围及后续验收步骤。当前源码版本为 `0.2.3-preview`（versionCode `5`）；最新构建、测试数量、签名、SHA-256、来源提交和 dirty 标志统一以 [VERIFICATION.md](../VERIFICATION.md) 为准。
 
 ## 证据可以说明什么
 
