@@ -50,18 +50,51 @@ class AttachmentTransfer(private val repository:ClientRepository) {
         assertOwner();onProgress("文件上传完成");id
     }
     suspend fun importDocument(project:String,file:File,onProgress:(String)->Unit):JsonObject {
-        val fileId=upload(project,file,onProgress)
-        val source=repository.request("POST","/projects/$project/sources",buildJsonObject {put("kind","file");put("title",file.name);put("fileId",fileId);put("purpose","reference")})
-        val version=source["sourceVersionId"]!!.jsonPrimitive.content
+        val owner=repository.accountId?:error("请先登录");val generation=repository.epoch
+        fun owned()=repository.accountId==owner&&repository.epoch==generation
+        fun assertOwner(){check(owned()){ "账户已变化，正文导入已停止" }}
         val extension=file.extension.lowercase()
+        require(extension in listOf("pdf","docx","xlsx","pptx")){"此文件类型不支持正文导入"}
+        val fileId=upload(project,file,onProgress);assertOwner()
+        val source=repository.request("POST","/projects/$project/sources",buildJsonObject {put("kind","file");put("title",file.name);put("fileId",fileId);put("purpose","reference")})
+        assertOwner()
+        val version=source["sourceVersionId"]!!.jsonPrimitive.content
         val path="/projects/$project/document-imports"
         val init=repository.networkJson("POST",path,buildJsonObject {put("sourceVersionId",version);put("method","browser-$extension")})
         val session=init["sessionId"]!!.jsonPrimitive.content
         var batch=0
-        val result=DocumentReader.read(repository.context,file) {block->
-            repository.networkJson("POST","$path/$session/batches",buildJsonObject {put("batchNumber",batch);put("blocks",buildJsonArray {add(buildJsonObject {put("seq",block.seq);put("pageNumber",block.page?.let {JsonPrimitive(it)}?:JsonNull);put("text",block.text)})})})
-            batch++;onProgress("本机正文已提交 $batch 批")
+        try {
+            assertOwner()
+            val result=DocumentReader.read(repository.context,file) {block->
+                assertOwner()
+                repository.networkJson("POST","$path/$session/batches",buildJsonObject {put("batchNumber",batch);put("blocks",buildJsonArray {add(buildJsonObject {
+                    put("seq",block.seq);put("pageNumber",block.page?.let {JsonPrimitive(it)}?:JsonNull);put("text",block.text)
+                    put("headingPath",JsonArray(block.headingPath.map {JsonPrimitive(it)}))
+                })})})
+                assertOwner();batch++;onProgress("本机正文已提交 $batch 批")
+            }
+            assertOwner()
+            return repository.networkJson("POST","$path/$session/complete",buildJsonObject {
+                put("totalPages",result.pages?.let {JsonPrimitive(it)}?:JsonNull)
+                put("warnings",JsonArray(result.warnings.take(100).map {JsonPrimitive(it.take(1000))}))
+                put("partial",result.warnings.isNotEmpty());put("interrupted",false)
+            })
+        } catch(failure:Exception) {
+            // Preserve acknowledged fragments and explicitly mark interruption. Never retry an
+            // uncertain batch or send a previous account's finalizer with a new account session.
+            var finalized=false
+            if(owned()) withContext(NonCancellable) {
+                runCatching { withTimeout(5000) {
+                    assertOwner()
+                    repository.networkJson("POST","$path/$session/complete",buildJsonObject {
+                        put("totalPages",JsonNull);put("warnings",buildJsonArray {add("本机正文导入中断；原文件与服务端已接收批次保留，请核对后继续")})
+                        put("partial",true);put("interrupted",true)
+                    })
+                    finalized=true
+                } }
+            }
+            if(failure is CancellationException)throw failure
+            throw java.io.IOException(if(finalized)"正文导入未完成；原文件和已接收正文保留为部分结果。${failure.message.orEmpty()}" else "正文导入中断，服务端状态尚未确认；请查看资料解析进度。${failure.message.orEmpty()}",failure)
         }
-        return repository.networkJson("POST","$path/$session/complete",buildJsonObject {put("totalPages",result.pages?.let {JsonPrimitive(it)}?:JsonNull);put("warnings",JsonArray(result.warnings.take(100).map {JsonPrimitive(it.take(1000))}));put("partial",result.warnings.any {it.contains("没有可提取")});put("interrupted",false)})
     }
 }
