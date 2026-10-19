@@ -4,12 +4,10 @@ import android.net.Uri
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import cn.buwei.nativeapp.data.ClientRepository
 import cn.buwei.nativeapp.data.NativeDraftStore
@@ -40,7 +38,7 @@ fun AiConversationScreen(repository:ClientRepository,projectId:String,onResource
    items(messages,key={it.text("id")}){message->Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=if(message.text("role")=="user")MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer)){
     Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
      Text(if(message.text("role")=="user")"我"else"AI",style=MaterialTheme.typography.labelLarge)
-     NativeMarkdown(message.text("content"))
+     NativeMarkdown(message.text("content"),onResource)
      (message["references"]as? JsonArray).orEmpty().forEach{reference->val ref=reference.jsonObject;val href=ref.text("href");val target=cn.buwei.nativeapp.nativeDestination(href);if(target?.projectId==projectId)TextButton({onResource(href)}){Text(ref.text("title"))}else Text(ref.text("title"),style=MaterialTheme.typography.labelSmall)}
      if(message.text("role")=="user")ChatOperations(repository,base,message.text("questionId"),pending!=null)
     }
@@ -87,7 +85,4 @@ internal fun activityProgress(activity:JsonObject):String?{
 }
 
 @Composable
-internal fun NativeMarkdown(markdown:String){
- var code=false
- SelectionContainer{Column(verticalArrangement=Arrangement.spacedBy(5.dp)){markdown.lines().forEach{line->if(line.trimStart().startsWith("```")){code=!code}else if(code)Text(line,fontFamily=FontFamily.Monospace,style=MaterialTheme.typography.bodySmall)else when{line.startsWith("### ")->Text(line.drop(4),style=MaterialTheme.typography.titleMedium);line.startsWith("## ")->Text(line.drop(3),style=MaterialTheme.typography.titleLarge);line.startsWith("# ")->Text(line.drop(2),style=MaterialTheme.typography.headlineSmall);line.startsWith("- ")||line.startsWith("* ")->Text("• "+line.drop(2));else->Text(line)}}}}
-}
+internal fun NativeMarkdown(markdown:String,onNavigate:((String)->Unit)?=null){NativeMarkdownContent(markdown,onNavigate)}
