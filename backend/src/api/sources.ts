@@ -543,13 +543,14 @@ export function registerSourceRoutes(app: OpenAPIHono<AppEnv>): void {
             WHERE json_extract(value, '$.pageNumber') = source_pages.page_number),
           image_status = 'uploaded', ocr_status = CASE WHEN ?6 = 1 THEN 'none' ELSE 'pending' END, updated_at = ?3
         WHERE source_version_id = ?1 AND ${sourceLifecycleGuard('?1','?4')}
+          AND (?6 = 0 OR EXISTS (SELECT 1 FROM sources current_source WHERE current_source.id = ?7 AND current_source.current_version_id = ?1))
           AND NOT EXISTS(SELECT 1 FROM json_each(?2) supplied LEFT JOIN files f ON f.id=json_extract(supplied.value,'$.fileId') WHERE f.id IS NULL OR f.project_id!=?5 OR f.deleted_at IS NOT NULL OR f.status!='available')
           AND page_number IN (SELECT json_extract(value, '$.pageNumber') FROM json_each(?2))
           AND (SELECT COUNT(*) FROM source_pages eligible
             WHERE eligible.source_version_id = ?1 AND (eligible.image_status = 'none' OR eligible.ocr_status = 'failed')
               AND eligible.text_status != 'extracted'
               AND eligible.page_number IN (SELECT json_extract(value, '$.pageNumber') FROM json_each(?2))) = json_array_length(?2)
-      `).bind(versionId, JSON.stringify(body.images), nowIso(),lifecycle.lifecycleVersion,member.projectId,uploadOnly ? 1 : 0).run();
+      `).bind(versionId, JSON.stringify(body.images), nowIso(),lifecycle.lifecycleVersion,member.projectId,uploadOnly ? 1 : 0,sourceId).run();
       const accepted = updated.meta.changes;
       if (accepted !== body.images.length) throw invalidState('页面状态已发生变化，请刷新后重新提交');
 
