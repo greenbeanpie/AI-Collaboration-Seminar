@@ -1,7 +1,7 @@
 using System.Security;
 using Microsoft.Windows.AppNotifications;
 
-namespace Buwei.Windows.App.Platform;
+namespace Buwei.Windows.Platform;
 
 public sealed class NativeNotifications : IDisposable
 {

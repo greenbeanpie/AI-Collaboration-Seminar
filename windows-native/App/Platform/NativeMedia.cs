@@ -4,7 +4,7 @@ using Windows.Media.Capture;
 using Windows.Media.MediaProperties;
 using Windows.Storage;
 
-namespace Buwei.Windows.App.Platform;
+namespace Buwei.Windows.Platform;
 
 /// <summary>Capture is local only. Upload always requires an explicit separate user action.</summary>
 public sealed class NativeMedia(string accountDirectory, ActivityGate activity) : IAsyncDisposable

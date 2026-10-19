@@ -3,7 +3,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text.Json.Nodes;
 
-namespace Buwei.Windows.App.Platform;
+namespace Buwei.Windows.Platform;
 
 public sealed record NativeUpdate(string Version, Uri Url, string Signature, string Sha256, long SizeBytes);
 
@@ -66,9 +66,9 @@ public sealed class NativeUpdates(string dataDirectory, ActivityGate activity)
     private static void VerifyFile(string path, NativeUpdate update)
     {
         if (new FileInfo(path).Length != update.SizeBytes) throw new InvalidDataException("更新文件大小不匹配。");
-        var bytes = File.ReadAllBytes(path);
-        if (!Convert.ToHexString(SHA256.HashData(bytes)).Equals(update.Sha256, StringComparison.OrdinalIgnoreCase)) throw new CryptographicException("更新摘要不匹配。");
-        MinisignVerifier.Verify(bytes, update.Signature);
+        using (var input = File.OpenRead(path))
+            if (!Convert.ToHexString(SHA256.HashData(input)).Equals(update.Sha256, StringComparison.OrdinalIgnoreCase)) throw new CryptographicException("更新摘要不匹配。");
+        MinisignVerifier.VerifyFile(path, update.Signature);
     }
     private async Task<byte[]> ReadLimitedAsync(Uri uri, int maximum, CancellationToken ct)
     {

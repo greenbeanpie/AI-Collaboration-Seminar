@@ -5,7 +5,7 @@ using Windows.Storage;
 using Windows.Storage.Pickers;
 using Windows.Storage.Streams;
 
-namespace Buwei.Windows.App.Platform;
+namespace Buwei.Windows.Platform;
 
 public sealed class NativeFiles(Window window)
 {

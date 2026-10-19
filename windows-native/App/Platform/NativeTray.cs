@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
 using Microsoft.UI.Xaml;
 
-namespace Buwei.Windows.App.Platform;
+namespace Buwei.Windows.Platform;
 
 /// <summary>Owned by the UI thread. Closing to tray is a shell policy, not done by this class.</summary>
 public sealed class NativeTray : IDisposable

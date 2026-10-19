@@ -11,7 +11,7 @@ $ErrorActionPreference = 'Stop'
 if ($Version -notmatch '^\d+\.\d+\.\d+(\.\d+)?$') { throw 'Version must contain only numeric components.' }
 $publishPath = (Resolve-Path -LiteralPath $PublishDirectory).Path
 $runtimePath = (Resolve-Path -LiteralPath $RuntimeInstaller).Path
-if (!(Test-Path -LiteralPath (Join-Path $publishPath 'Buwei.Windows.exe'))) { throw 'Publish directory does not contain Buwei.Windows.exe.' }
+if (!(Test-Path -LiteralPath (Join-Path $publishPath 'Buwei.Windows.Native.exe'))) { throw 'Publish directory does not contain Buwei.Windows.Native.exe.' }
 if (!(Test-Path -LiteralPath (Join-Path $publishPath 'coreclr.dll'))) { throw 'Expected self-contained .NET publish output.' }
 if (Get-ChildItem -LiteralPath $publishPath -Recurse -Filter '*WebView2*') { throw 'WebView2 dependency is forbidden in the native package.' }
 $authenticode = Get-AuthenticodeSignature -LiteralPath $runtimePath
@@ -22,7 +22,7 @@ if (!$nsis) { throw 'NSIS makensis.exe was not found.' }
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 $outputPath = (Resolve-Path -LiteralPath $OutputDirectory).Path
 $installer = Join-Path $outputPath "Buwei.Windows.Native-$Version-x64.exe"
-& $nsis "/DPUBLISH_DIR=$publishPath" "/DRUNTIME_INSTALLER=$runtimePath" "/DAPP_VERSION=$Version" "/DOUTPUT_FILE=$installer" (Join-Path $PSScriptRoot '../installer/Buwei.Native.nsi')
+& $nsis '/INPUTCHARSET' 'UTF8' "/DPUBLISH_DIR=$publishPath" "/DRUNTIME_INSTALLER=$runtimePath" "/DAPP_VERSION=$Version" "/DOUTPUT_FILE=$installer" (Join-Path $PSScriptRoot '../installer/Buwei.Native.nsi')
 if ($LASTEXITCODE -ne 0) { throw "NSIS failed: $LASTEXITCODE" }
 Compress-Archive -Path (Join-Path $publishPath '*') -DestinationPath (Join-Path $outputPath "Buwei.Windows.Native-$Version-x64-portable.zip") -Force
 $hash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()

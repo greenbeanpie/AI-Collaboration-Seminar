@@ -3,7 +3,7 @@ using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text.Json.Nodes;
 
-namespace Buwei.Windows.App.Platform;
+namespace Buwei.Windows.Platform;
 
 public sealed class NativeTransfers(HttpClient http, string accountDirectory, ActivityGate activity)
 {

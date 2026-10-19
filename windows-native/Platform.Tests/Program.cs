@@ -1,6 +1,6 @@
 using System.Net;
 using System.Text;
-using Buwei.Windows.App.Platform;
+using Buwei.Windows.Platform;
 
 static void Reject(Action action)
 {
@@ -10,7 +10,7 @@ static void Reject(Action action)
 if (args.Length > 0 && args[0] == "--verify-release")
 {
     if (args.Length != 5) throw new ArgumentException("--verify-release installer signature manifest manifest-signature");
-    MinisignVerifier.Verify(File.ReadAllBytes(args[1]), File.ReadAllText(args[2]));
+    MinisignVerifier.VerifyFile(args[1], File.ReadAllText(args[2]));
     MinisignVerifier.Verify(File.ReadAllBytes(args[3]), File.ReadAllText(args[4]));
     Console.WriteLine("PASS: installer and independent update manifest signatures.");
     return;
@@ -21,6 +21,7 @@ var signature = File.ReadAllText(fixture + ".sig");
 var key = File.ReadAllText(Path.ChangeExtension(fixture, ".pub"));
 var bytes = File.ReadAllBytes(fixture);
 MinisignVerifier.Verify(bytes, signature, key);
+MinisignVerifier.VerifyFile(fixture, signature, key);
 MinisignVerifier.Verify(bytes, signature); // Existing production public key matches the historical signed fixture.
 var tampered = (byte[])bytes.Clone(); tampered[0] ^= 1;
 Reject(() => MinisignVerifier.Verify(tampered, signature, key));
@@ -35,6 +36,19 @@ NativeTransfers.RequireApiPath("/api/v1/projects/123/files");
 var temp = Path.Combine(Path.GetTempPath(), "buwei-platform-tests-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(temp);
 try
 {
+    // Ephemeral test key only; production key and release signing material are untouched.
+    using var pair = Sodium.PublicKeyAuth.GenerateKeyPair();
+    var keyPacket = new byte[42]; keyPacket[0] = (byte)'E'; keyPacket[1] = (byte)'d'; pair.PublicKey.CopyTo(keyPacket, 10);
+    var prehash = Sodium.GenericHash.Hash(bytes, null, 64);
+    var detached = Sodium.PublicKeyAuth.SignDetached(prehash, pair.PrivateKey);
+    var sigPacket = new byte[74]; sigPacket[0] = (byte)'E'; sigPacket[1] = (byte)'D'; detached.CopyTo(sigPacket, 10);
+    var comment = Encoding.UTF8.GetBytes("test-only"); var globalInput = detached.Concat(comment).ToArray();
+    var globalSignature = Sodium.PublicKeyAuth.SignDetached(globalInput, pair.PrivateKey);
+    var testKey = Convert.ToBase64String(Encoding.UTF8.GetBytes("untrusted comment: test\n" + Convert.ToBase64String(keyPacket) + "\n"));
+    var testSignature = Convert.ToBase64String(Encoding.UTF8.GetBytes("untrusted comment: test\n" + Convert.ToBase64String(sigPacket) + "\ntrusted comment: test-only\n" + Convert.ToBase64String(globalSignature) + "\n"));
+    MinisignVerifier.Verify(bytes, testSignature, testKey);
+    MinisignVerifier.VerifyFile(fixture, testSignature, testKey);
+    Reject(() => MinisignVerifier.Verify(tampered, testSignature, testKey));
     var handler = new DownloadHandler();
     using var http = new HttpClient(handler) { BaseAddress = new Uri("https://test.invalid") };
     var transfers = new NativeTransfers(http, temp, gate);
@@ -46,9 +60,15 @@ try
     try { await transfers.DownloadAsync("/api/v1/files/one", destination, new string('0', 64)); throw new Exception("hash check accepted"); }
     catch (System.IO.InvalidDataException) { }
     if (await File.ReadAllTextAsync(destination) != "original") throw new Exception("Bad download replaced destination.");
+    var uploadHandler = new UploadHandler();
+    using var uploadHttp = new HttpClient(uploadHandler) { BaseAddress = new Uri("https://test.invalid") };
+    var upload = new NativeTransfers(uploadHttp, temp, gate);
+    var source = Path.Combine(temp, "upload.txt"); await File.WriteAllTextAsync(source, "abcdef");
+    await upload.UploadAsync(Guid.NewGuid().ToString(), Guid.NewGuid().ToString(), source);
+    if (uploadHandler.UploadedParts != 1 || !uploadHandler.Completed) throw new Exception("Multipart resume did not skip the persisted server part.");
 }
 finally { Directory.Delete(temp, true); }
-Console.WriteLine("PASS: production fixture, tampering, activity/restart gate, path confinement, range resume and hash failure preservation.");
+Console.WriteLine("PASS: production fixture, tampering, activity/restart gate, path confinement, range resume, hash failure preservation and multipart resume.");
 
 sealed class DownloadHandler : HttpMessageHandler
 {
@@ -61,5 +81,27 @@ sealed class DownloadHandler : HttpMessageHandler
         response.Headers.ETag = new("\"v1\"");
         if (range is not null) response.Content.Headers.ContentRange = new(3, 5, 6);
         return Task.FromResult(response);
+    }
+}
+
+sealed class UploadHandler : HttpMessageHandler
+{
+    private readonly string session = Guid.NewGuid().ToString();
+    public int UploadedParts { get; private set; }
+    public bool Completed { get; private set; }
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        var path = request.RequestUri!.AbsolutePath;
+        string payload;
+        if (request.Method == HttpMethod.Post && path.EndsWith("/uploads")) payload = $"{{\"sessionId\":\"{session}\",\"partBytes\":3}}";
+        else if (request.Method == HttpMethod.Get) payload = "{\"status\":\"uploading\",\"parts\":[{\"partNumber\":1,\"sizeBytes\":3}]}";
+        else if (request.Method == HttpMethod.Put)
+        {
+            if (!path.EndsWith("/parts/2") || request.Headers.GetValues("X-Part-Size").Single() != "3" || await request.Content!.ReadAsStringAsync(cancellationToken) != "def") throw new Exception("Bad multipart chunk.");
+            UploadedParts++; payload = "{}";
+        }
+        else if (path.EndsWith("/complete")) { Completed = true; payload = "{}"; }
+        else throw new Exception("Unexpected upload request.");
+        return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"data\":" + payload + "}", Encoding.UTF8, "application/json") };
     }
 }

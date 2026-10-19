@@ -1,4 +1,4 @@
-namespace Buwei.Windows.App.Platform;
+namespace Buwei.Windows.Platform;
 
 /// <summary>All unsaved editors, capture and transfers hold a lease until durably saved.</summary>
 public sealed class ActivityGate
