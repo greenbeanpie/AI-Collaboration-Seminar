@@ -161,7 +161,10 @@ public sealed class MainWindow : Window
     {
         if (repository.AccountId == null) throw new InvalidOperationException("请先登录");
         using var busy = activity.Enter("同步"); await repository.SyncAsync();
-        var rows = await repository.Store.WritesAsync(); var panel = new StackPanel { Spacing = 12, Width = 560 };
+        var syncOwner = repository.CaptureAccount();
+        var rows = await repository.Store.WritesAsync();
+        if (syncOwner.AccountId == null || repository.Epoch != syncOwner.Epoch) throw new InvalidOperationException("账户已变化，请重新打开同步中心。");
+        var panel = new StackPanel { Spacing = 12, Width = 560 };
         panel.Children.Add(new TextBlock { Text = rows.Count == 0 ? "所有修改均已提交至服务端" : $"本机保留 {rows.Count} 项待处理修改", TextWrapping = TextWrapping.Wrap });
         foreach (var row in rows)
         {
@@ -224,7 +227,7 @@ public sealed class MainWindow : Window
             }
             panel.Children.Add(group);
         }
-        var fileDirectory = Path.Combine(AccountDirectory(), "files");
+        var fileDirectory = Path.Combine(repository.Store.DataDirectory, "accounts", ClientPaths.SafeSegment(syncOwner.AccountId), "files");
         if (Directory.Exists(fileDirectory)) foreach (var journal in Directory.EnumerateFiles(fileDirectory, "upload-*.json"))
         {
             var recovery = JsonNode.Parse(await File.ReadAllTextAsync(journal));
@@ -232,7 +235,7 @@ public sealed class MainWindow : Window
             var project = recovery?["projectId"]?.GetValue<string>(); var fileId = recovery?["fileId"]?.GetValue<string>();
             if (source == null || !File.Exists(source) || !Guid.TryParse(project, out _) || !Guid.TryParse(fileId, out _) ||
                 !Path.GetFullPath(source).StartsWith(Path.GetFullPath(fileDirectory) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) continue;
-            panel.Children.Add(Button("继续上传本机文件 " + Path.GetFileName(source), async () => { await Transfers().UploadAsync(project!, fileId!, source, ct: transferStop.Token); SetStatus("断点上传已完成"); }));
+            panel.Children.Add(Button("继续上传本机文件 " + Path.GetFileName(source), async () => { if (repository.Epoch != syncOwner.Epoch) throw new InvalidOperationException("账户已变化，请重新打开同步中心。"); using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(transferStop.Token, syncOwner.Cancellation); await new NativeTransfers(repository.Http, fileDirectory, activity, syncOwner.Cancellation).UploadAsync(project!, fileId!, source, ct: lifetime.Token); SetStatus("断点上传已完成"); }));
         }
         await ShowAsync("同步与冲突", panel);
     }
@@ -252,7 +255,13 @@ public sealed class MainWindow : Window
         using var busy = activity.Enter("离线准备"); var result = await repository.PrepareProjectAsync(project, transferStop.Token);
         SetStatus($"已保存 {result.Endpoints} 个入口及 {result.Sections} 个原文分节；{(result.PartialResources == 0 ? "本次文本范围已准备" : $"另有 {result.PartialResources} 个版本的原文准备未完整完成")}。原文件需另外下载，其他业务页面仍需事先在线打开");
     }
-    private NativeTransfers Transfers() => new(repository.Http, Path.Combine(AccountDirectory(), "files"), activity, repository.AccountCancellation);
+    private NativeTransfers Transfers()
+    {
+        var owner = repository.CaptureAccount();
+        if (owner.AccountId == null) throw new InvalidOperationException("请先登录");
+        var directory = Path.Combine(repository.Store.DataDirectory, "accounts", ClientPaths.SafeSegment(owner.AccountId), "files");
+        return new(repository.Http, directory, activity, owner.Cancellation);
+    }
     private async Task AddFileAsync()
     {
         var project = workspace?.CurrentProjectId ?? throw new InvalidOperationException("请先打开项目");
@@ -260,7 +269,8 @@ public sealed class MainWindow : Window
     }
     private async Task ResumeTaskFileUploadAsync(string requestId)
     {
-        var ownerEpoch = repository.Epoch; var transferToken = transferStop.Token;
+        var owner = repository.CaptureAccount(); var ownerEpoch = owner.Epoch;
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(transferStop.Token, owner.Cancellation); var transferToken = lifetime.Token;
         if (!await repository.TaskFileNeedsUploadAsync(requestId, transferToken)) { SetStatus("服务端原文件已上传完成，无需重复上传；请在任务页面核对并恢复登记。"); return; }
         var request = (await repository.Store.TaskFileRequestsAsync()).SingleOrDefault(x => x.Id == requestId) ?? throw new InvalidOperationException("登记记录已处理。");
         var recovery = JsonNode.Parse(request.Recovery ?? "null") ?? throw new InvalidOperationException("没有私有原文件恢复信息。");
@@ -286,8 +296,9 @@ public sealed class MainWindow : Window
     }
     private async Task ConfirmUploadAsync(string project, string source, string contentType, TaskFileTarget? taskFile = null)
     {
-        var transferToken = transferStop.Token;
-        var account = repository.AccountId ?? throw new InvalidOperationException("请先登录"); var ownerEpoch = repository.Epoch; var info = new FileInfo(source);
+        var owner = repository.CaptureAccount();
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(transferStop.Token, owner.Cancellation); var transferToken = lifetime.Token;
+        var account = owner.AccountId ?? throw new InvalidOperationException("请先登录"); var ownerEpoch = owner.Epoch; var info = new FileInfo(source);
         var options = new StackPanel { Spacing = 12 };
         options.Children.Add(new TextBlock { Text = $"{info.Name}\n{info.Length / 1048576.0:F2} MiB\n上传沿用项目现有处理策略；启用自动 AI 的项目可能产生费用。", TextWrapping = TextWrapping.Wrap });
         var import = new CheckBox { Content = taskFile == null ? "同时导入 Office 正文供项目 AI 使用" : "提取 Office 正文登记到任务材料（最多 60,000 字符，超限明确截断）", IsChecked = OfficeTextReader.IsSupported(source), Visibility = OfficeTextReader.IsSupported(source) ? Visibility.Visible : Visibility.Collapsed };

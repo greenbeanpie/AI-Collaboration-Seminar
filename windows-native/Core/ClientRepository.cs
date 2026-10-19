@@ -19,8 +19,11 @@ public sealed partial class ClientRepository : IDisposable
     private readonly SecretStore secrets;
     private readonly SemaphoreSlim syncing = new(1);
     private long epoch;
+    private readonly object accountGate = new();
     private CancellationTokenSource accountLifetime = new();
-    public CancellationToken AccountCancellation => accountLifetime.Token;
+    public CancellationToken AccountCancellation => CaptureAccount().Cancellation;
+    public (string? AccountId, long Epoch, CancellationToken Cancellation) CaptureAccount()
+    { lock (accountGate) return (AccountId, epoch, accountLifetime.Token); }
     private int activeRequests;
     public int ActiveRequests => Volatile.Read(ref activeRequests);
     public HttpClient Http { get; }
@@ -54,9 +57,13 @@ public sealed partial class ClientRepository : IDisposable
     }
     private void SetUser(JsonNode? user)
     {
-        Interlocked.Increment(ref epoch);
-        var previous = accountLifetime; accountLifetime = new(); previous.Cancel(); previous.Dispose();
-        User = user?.DeepClone(); Store.SetAccount(AccountId); AccountChanged?.Invoke();
+        lock (accountGate)
+        {
+            Interlocked.Increment(ref epoch);
+            var previous = accountLifetime; previous.Cancel(); accountLifetime = new(); previous.Dispose();
+            User = user?.DeepClone(); Store.SetAccount(AccountId);
+        }
+        AccountChanged?.Invoke();
     }
     public async Task RestoreAsync(CancellationToken ct = default)
     {

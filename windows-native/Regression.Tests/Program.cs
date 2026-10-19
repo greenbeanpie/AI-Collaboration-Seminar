@@ -695,8 +695,8 @@ tests.Add(("Task file bounded text includes explicit truncation notice and prese
 
 tests.Add(("Account replacement cancels old transfer lifetime and gives new account an independent lifetime", async () =>
 {
-    using var f = new Fixture(); await f.Login(); var original = f.Repository.AccountCancellation;
-    True(!original.IsCancellationRequested); await f.Login("account-b"); True(original.IsCancellationRequested); True(!f.Repository.AccountCancellation.IsCancellationRequested);
+    using var f = new Fixture(); await f.Login(); var captured = f.Repository.CaptureAccount(); var original = captured.Cancellation; Equal(captured.AccountId, "account-a");
+    True(!original.IsCancellationRequested); await f.Login("account-b"); True(original.IsCancellationRequested); var next = f.Repository.CaptureAccount(); Equal(next.AccountId, "account-b"); True(next.Epoch > captured.Epoch); True(!next.Cancellation.IsCancellationRequested);
 }));
 
 var failed = 0;
