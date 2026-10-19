@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import cn.buwei.nativeapp.NativeAiReferenceBadge
+import cn.buwei.nativeapp.ReferenceFieldLabel
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
@@ -50,7 +52,7 @@ internal data class RichSelection(val path:List<Int>,val range:TextRange)
     }}}
     if(discard)AlertDialog(onDismissRequest={discard=false},title={Text("删除本机草稿？")},text={Text("仅删除此账户的本机编辑；已保存的服务端版本不受影响。")},confirmButton={TextButton(onClick={discard=false;scope.launch{try{store.remove(draftKey,owner,epoch);recovery=null;serialized=original.toString();revision=material["revision"]?.jsonPrimitive?.intOrNull?:1;queued=false;editing=false}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}}}){Text("删除本机草稿")}},dismissButton={TextButton(onClick={discard=false}){Text("保留")}})
     if(!editing) {OutlinedButton(onClick={editing=true},enabled=recovery==null&&!queued){Text("编辑正文")};message?.let{Text(it)};error?.let{Text(it,color=MaterialTheme.colorScheme.error)};return}
-    Text("编辑版本 $revision",style=MaterialTheme.typography.bodySmall)
+    Text("编辑版本 $revision",style=MaterialTheme.typography.bodySmall);NativeAiReferenceBadge()
     Text("选中文字可设置格式；内容块可调整顺序。引用、附件和历史版本继续保留。",style=MaterialTheme.typography.bodySmall)
     FlowRow(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
         OutlinedButton(onClick={val previous=history.last();future=(future+document).takeLast(20);history=history.dropLast(1);serialized=previous.toString();persist(previous);selection=null},enabled=history.isNotEmpty()&&!busy&&!queued){Text("撤销")}

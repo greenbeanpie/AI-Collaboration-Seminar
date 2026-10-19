@@ -1,8 +1,43 @@
 # 原生 Android 迁移预览版验证报告
 
-## 当前交付：0.2.1-preview（2026-10-19）
+## 当前交付：0.2.2-preview（2026-10-19）
 
-以下为当前结果；下方 `0.1.0` 记录仅保留为历史，不能用于判断当前部署状态或功能缺口。专用 Compose / Material 3 工作区已覆盖项目、创建、任务协作、资料、富文档、评分与演练、AI 协作、人员、帮助和管理入口，继续使用现有后端。实际生产授权及外部服务验收仍未闭环，不声明全量迁移目标完成。
+当前版本继续使用现有后端与账号体系。原生业务界面使用 Kotlin / Compose / Material 3；完整迁移目标仍需完成真实授权和外部服务验收，不能以接口数量或模拟测试代替。
+
+### 安装包与验证结果
+
+- [签名 Release APK](../output/android-native/buwei-native-0.2.2-preview-release.apk)：5,536,981 bytes（约 5.28 MiB），versionCode 4，独立包名 `cn.buwei.mobile.nativepreview`。
+- SHA-256：`91e1dc28ef3fe665be28ba31b611d34de49e4bea2f5a75679b91ba313bc7518b`。
+- [构建元数据](../output/android-native/release-artifact.json)：来源提交 `ba8857a370339c4a0347ebee9705afcf2feb4fb2`，`sourceTreeDirty=false`。后续修改仅涉及验证脚本和文档，无需重建 APK。复用已有签名，v2/v3 校验通过。
+- [主分支 Release 构建](../output/android-native/tests/0.2.2-main-release.log)通过：143 项 JVM 测试、Lint、R8/资源压缩与签名。Lint 为 0 errors、1 项既有 BouncyCastle EST 依赖告警，未打包的 EST 代码由 `-checkdiscard` 检查；工具链仍有弃用提示。
+- 完整 instrumentation：API 37 手机 [101 项通过](../output/android-native/tests/0.2.2-phone.log)，220.591 秒；API 33 平板 `localhost:5555` [101 项通过](../output/android-native/tests/0.2.2-tablet.log)，270.002 秒。使用本机模拟服务与隔离账号，未访问生产业务。测试业务源码为 `2ba5f6ee`；最终 APK 其后仅改登录说明、文档与测试，最终登录页另用签名包冒烟核对。
+- 最终签名包在[手机](../output/android-native/smoke-20261019-233850/report.json)和[平板](../output/android-native/smoke-20261019-234424/report.json)初始登录页冒烟通过，UI WebView 节点均为 0；同一哈希 APK 全部 DEX 未发现 WebView 引用。两张最终截图均已查看，无裁切或横向溢出。原应用和用户数据保留。
+- 路由检查 11 项通过；[静态结果](../output/android-native/final-routes-0.2.2.json)为 184 个静态绑定、134 个独立操作、错误 0，另有 186 个动态绑定未被静态检查验证；311 个生成契约一致。这些数量不代表全量业务完成率。
+
+### 本轮业务改动与修复
+
+- 富文档直接渲染原始 JSON，保留行内格式、换行、列表、表格单元格和固定引用；完整导出预览按有限文本块展开，支持刷新和失败恢复。
+- AI 失败作业在确认及重新核对状态后恢复；任务建议支持逐条选择、显式空选择、过期修订与冲突保留，反馈使用实际冻结版本及历史。
+- 私密问询固定点击时已展示消息，去重并每批最多 200 条；失败停止，由用户明确继续，区分处理数与实际新增已读数。
+- AI 引用标识按账户保存显隐；输入标签和徽标改为框上方独立布局，修复 280dp、2 倍字体的顶部裁切。[手机截图](../output/android-native/tests/0.2.2-reference-phone.png)与[平板截图](../output/android-native/tests/0.2.2-reference-tablet.png)已查看。
+- 短窗口内对话输入可滚动到达；发送前释放焦点并收起键盘，修复插入回复时焦点滚动导致的持续重组。历史刷新不再依赖作业卡片是否处于可见区域；后台暂停轮询，已知撤权清除服务器消息并保留未发送草稿。
+- 输入契约的空 schema 正确允许结构化 JSON，修复建议更新被误判为文本的实际阻断。另修正禁用输入框测试选择器，以及作业卡片滚出可见区后的测试前置条件；最终完整套件均已重跑通过。
+
+涉及文件主要位于 `features/` 的富文档、对话、建议、反馈与问询工作区，`media/ExportWorkspace.kt`、`ui/` 引用偏好与输入组件，以及对应 JVM / instrumentation 测试；具体清单可由 Git 提交差异复核。
+
+ADB 验证脚本修复 TCP 设备序列号含冒号时的路径问题：共享 `scripts/adb-artifact-path.ps1` 对文件名编码，原始序列号仍用于 ADB；冒烟和资源脚本的 `-ValidateOnly` 均通过，含冲突与非法输入检查。此前平板脚本失败属于路径生成问题，修复后已在 `localhost:5555` 实际重跑通过，未用设备别名掩盖。原失败报告保留在本机输出目录。
+
+### 当前 Release 资源采样与验收边界
+
+[五轮原始报告](../output/android-native/benchmark-20261019-233909-emulator-5556/report.json)核对安装包哈希与交付包一致，非 Debug。API 37 模拟器未登录页进程冷启动 `TotalTime` 中位数 511 ms（476–1011），PSS 中位数 28,001 KiB（27,980–28,042），短窗口空闲 CPU 中位数 0%（0–0.327%）。使用 `-NativeOnly`，未操作旧应用；未清理存储或编译缓存。结果不能代表真实业务可交互时间、手机电量或相对旧版的资源节省比例。
+
+本轮没有修改或重新部署 backend/frontend；此前获授权的备份、0078–0080 迁移和部署记录保留在下方历史报告。用户暂不方便完成 Turnstile，因此本轮没有继续生产登录尝试。真实浏览器回调、PKCE 交换及账号一致性，FCM 实际投递，真实模型/OCR/语音、DSH、四小时物理录制、生产权限竞争和可比业务负载仍按 [验收清单](docs/ACCEPTANCE.md) 完成。未调用真实付费模型、发送推送或修改生产业务数据，未将这些边界记为通过。
+
+复现构建、路由校验、设备测试与资源脚本的命令见 [README](README.md)。下方为历史证据，不代表当前安装包或本轮测试数量。
+
+## 历史交付：0.2.1-preview（不代表当前状态）
+
+以下为当时结果；不能用于判断当前构建状态或功能缺口。专用 Compose / Material 3 工作区已覆盖项目、创建、任务协作、资料、富文档、评分与演练、AI 协作、人员、帮助和管理入口，继续使用现有后端。实际生产授权及外部服务验收仍未闭环，不声明全量迁移目标完成。
 
 - 签名安装包：[buwei-native-0.2.1-preview-release.apk](../output/android-native/buwei-native-0.2.1-preview-release.apk)，5,504,213 bytes；versionCode 3；独立包名 `cn.buwei.mobile.nativepreview`。
 - SHA-256：`6f25a937e738dbc162746e146a22593be5e0049863800d57010c490fedbe25ba`。
@@ -13,7 +48,7 @@
 - 原生授权生产验证脚本离线 6 组自检通过；后端原生相关 21 项及 readiness 30 项通过。网页授权页构建、发布预检及两端部署 dry-run 通过。
 - 最终 Release 已覆盖安装到两台模拟器，初始登录页冒烟通过。对应 APK 全部 DEX 未观察到 WebView 引用；UI 层级 WebView 数量均为 0。原有客户端和私有数据保留。
 
-证据：[构建元数据](../output/android-native/release-artifact.json)、[冒烟与 DEX 报告](../output/android-native/smoke-20261019-225028/report.json)、[静态路由结果](../output/android-native/final-routes.json)。完整套件日志位于集成工作区 `output-native-markdown-phone-device.log` 与 `output-native-markdown-tablet-device.log`，主分支构建日志为 `output-native-main-0.2.1-release.log`；这些本机产物不入库。
+证据：[历史构建元数据](../output/android-native/0.2.1-release-artifact.json)、[冒烟与 DEX 报告](../output/android-native/smoke-20261019-225028/report.json)、[静态路由结果](../output/android-native/final-routes.json)。完整套件日志位于集成工作区 `output-native-markdown-phone-device.log` 与 `output-native-markdown-tablet-device.log`，主分支构建日志为 `output-native-main-0.2.1-release.log`；这些本机产物不入库。
 
 ### 当前 Release 资源采样
 
@@ -39,7 +74,7 @@ FCM 实际投递、真实模型/OCR/实时语音、DSH 外部设备流程、四�
 
 - [签名 Release APK](../output/android-native/buwei-native-preview-0.1.0-release.apk)：4,967,384 bytes，约 4.74 MiB；独立包 `cn.buwei.mobile.nativepreview`，支持 Android 8+。
 - SHA-256：`4f275bb3f47df6c5860ad2b6d43bd8328c578b4619bd53350dc7c0cfa00449cb`。
-- [构建与哈希元数据](../output/android-native/release-artifact.json)、[签名验证](../output/android-native/buwei-native-preview-0.1.0-release.apk.signature.txt)、[主分支构建日志](../output/android-native/main-release-build.log)。复用已有签名，APK v2/v3 验证通过；没有创建或重置密钥。
+- [历史构建与哈希元数据](../output/android-native/0.1.0-release-artifact.json)、[签名验证](../output/android-native/buwei-native-preview-0.1.0-release.apk.signature.txt)、[主分支构建日志](../output/android-native/main-release-build.log)。复用已有签名，APK v2/v3 验证通过；没有创建或重置密钥。
 - [迁移矩阵](docs/MIGRATION_MATRIX.md) 与 [剩余验收](docs/ACCEPTANCE.md) 区分原生专用界面、契约表单和真实服务验收。本版本仍是预览版，不能声明全部业务体验对等。
 
 ## 已运行检查

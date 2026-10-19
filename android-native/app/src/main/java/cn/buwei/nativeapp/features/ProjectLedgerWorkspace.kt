@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import cn.buwei.nativeapp.NativeAiReferenceBadge
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import cn.buwei.nativeapp.data.ClientRepository
@@ -66,7 +67,7 @@ private fun ProjectLedgerContent(repository: ClientRepository, projectId: String
         item { TextButton({ refresh++ }, enabled = !loading) { Text("刷新本页活动") }; Text("第 ${pageIndex + 1} 页 · 本页 ${if(loading || error != null) "—" else events.size} 条") }
         if(loading) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
         error?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
-        items(events, key = { it.text("eventId") }) { ProjectEventCard(it) }
+        items(events, key = { it.text("eventId") }) { NativeAiReferenceBadge(); ProjectEventCard(it) }
         if(!loading && error == null && events.isEmpty()) item { Text("暂无此类事件记录。操作发生后会在此保留历史。") }
         item { Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) { OutlinedButton({ pageIndex-- }, enabled = !loading && pageIndex > 0) { Text("上一页") }; Button({ val next = nextCursor; if(next != null) { cursors = cursors.take(pageIndex + 1) + next; pageIndex++ } }, enabled = !loading && error == null && nextCursor != null) { Text("下一页") } } }
     }

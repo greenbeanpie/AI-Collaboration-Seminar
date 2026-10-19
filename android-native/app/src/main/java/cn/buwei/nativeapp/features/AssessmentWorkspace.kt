@@ -11,6 +11,8 @@ import androidx.compose.ui.unit.dp
 import cn.buwei.nativeapp.data.ClientRepository
 import cn.buwei.nativeapp.data.NativeDraftStore
 import cn.buwei.nativeapp.data.requestDurably
+import cn.buwei.nativeapp.NativeAiReferenceBadge
+import cn.buwei.nativeapp.ReferenceOutlinedTextField
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.*
@@ -40,8 +42,9 @@ internal suspend fun assessmentPages(repository: ClientRepository, path: String)
 }
 
 @Composable
-internal fun AssessmentChoice(label: String, selected: String, options: List<Pair<String, String>>, onChange: (String) -> Unit) {
+internal fun AssessmentChoice(label: String, selected: String, options: List<Pair<String, String>>, aiReference:Boolean=false, onChange: (String) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
+    if(aiReference)NativeAiReferenceBadge()
     Box { OutlinedButton({ expanded = true }, Modifier.fillMaxWidth()) { Text("$label：${options.find { it.first == selected }?.second ?: "请选择"}") }
         DropdownMenu(expanded, { expanded = false }) { options.forEach { (id, title) -> DropdownMenuItem(text = { Text(title) }, onClick = { onChange(id); expanded = false }) } }
     }
@@ -57,6 +60,7 @@ internal fun AssessmentReferencePicker(repository: ClientRepository, projectId: 
     LaunchedEffect(chosen) { versions = emptyList(); if (chosen.isNotBlank()) try { versions = assessmentPages(repository, "$base/materials/${Uri.encode(chosen)}/versions?limit=100") } catch (e: CancellationException) { throw e } catch (e: Exception) { error = e.message } }
     TextButton({ opened = !opened }) { Text("固定参考版本 · 文档 ${materials.size}/10 · 来源 ${sources.size}/5") }
     if (opened) {
+        NativeAiReferenceBadge()
         Text("后续编辑不会替换本轮固定正文。未选择时由后端查阅授权资料。", style = MaterialTheme.typography.bodySmall)
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         sourceRows.forEach { source -> val id = source.text("currentVersionId"); if (id.isNotBlank()) Row { Checkbox(id in sources, { checked -> if (!checked || sources.size < 5) onChange(materials, if (checked) sources + id else sources - id) }); Text(source.text("title"), Modifier.padding(top = 12.dp)) } }
@@ -131,6 +135,7 @@ private fun AssessmentWorkspaceContent(repository: ClientRepository, projectId: 
             records.filter { section == "reviews" || it.text("kind") == "material_review" }.forEach { row -> val id = row.text(if (section == "reviews") "reviewId" else "assessmentId"); OutlinedButton({ selected = id }, Modifier.fillMaxWidth()) { Text("${row.text("createdAt")} · ${businessValue("status", JsonPrimitive(row.text("status")))} · 标准 v${row.text("standardsVersion")}") } }
             detail?.let { row ->
                 Text("固定目标：${row.obj("goal").text("title")} · r${row.text("goalRevision")}")
+                NativeAiReferenceBadge()
                 Text("本轮固定成果 ${(row["materialVersionIds"] as? JsonArray)?.size ?: 0} 个；当前评分 r${row.text("revision")}")
                 AssessmentReport(row.obj("report"))
                 if (row["aiReport"] is JsonObject) { Text("原始 AI 建议（人工修正前）", style = MaterialTheme.typography.titleMedium); AssessmentReport(row.obj("aiReport"), row.obj("report")) }
@@ -140,10 +145,10 @@ private fun AssessmentWorkspaceContent(repository: ClientRepository, projectId: 
                     if (!sameStandard) Text("标准已变化，本轮仅供查看。请按当前标准新建评分。")
                     if (row.text("status") == "succeeded") AssessmentFollowupWorkspace(repository, projectId, row, aiEnabled && canCorrect && !busy, onChanged = { refresh++ }, onConfirm = { message, action -> confirm = message to action })
                 }
-                row.text("jobId").takeIf { it.isNotBlank() }?.let { id -> NativeJobExecution(repository, id, onSettled = { refresh++ }) }
+                row.text("jobId").takeIf { it.isNotBlank() }?.let { id -> NativeJobExecution(repository, id, allowResume = aiEnabled, onSettled = { refresh++ }) }
             }
         }
-        if (jobId.isNotBlank()) NativeJobExecution(repository, jobId, onSettled = { refresh++ })
+        if (jobId.isNotBlank() && (section == "standards" || detail?.text("jobId").isNullOrBlank())) NativeJobExecution(repository, jobId, allowResume = aiEnabled, onResumed = { jobId = it }, onSettled = { refresh++ })
     }
     confirm?.let { (message, action) -> AlertDialog(onDismissRequest = { confirm = null }, title = { Text("确认操作") }, text = { Text(message) }, confirmButton = { TextButton({ confirm = null; runAction(action) }) { Text("确认") } }, dismissButton = { TextButton({ confirm = null }) { Text("取消") } }) }
 }
@@ -151,6 +156,7 @@ private fun AssessmentWorkspaceContent(repository: ClientRepository, projectId: 
 @Composable
 internal fun AssessmentReport(report: JsonObject, before: JsonObject? = null) {
     if (report.isEmpty()) { Text("本轮结果尚未返回。"); return }
+    NativeAiReferenceBadge()
     Text("总分：${report.text("weightedTotal").ifBlank { report.obj("overall").text("score").ifBlank { "未评分" } }}", style = MaterialTheme.typography.titleLarge)
     NativeMarkdown(report.text("summary").ifBlank { report.obj("overall").text("summary") })
     report.rows("scores").forEach { score -> Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -191,8 +197,8 @@ private fun AssessmentFollowupWorkspace(repository: ClientRepository, projectId:
     LaunchedEffect(path, assessment.text("revision"), reload) { try { turns = assessmentPages(repository, "$path?limit=20") } catch (e: CancellationException) { throw e } catch (e: Exception) { error = e.message } }
     AssessmentDraft(repository, "assessment-followup:$projectId:${assessment.text("assessmentId")}", buildJsonObject { put("message", message) }, restore = { message = it.text("message") }, failure = { error = it })
     Text("固定材料追问与版本对比", style = MaterialTheme.typography.titleMedium); Text("新对话中的事实不能作为评分证据；复核只使用本轮固定材料与标准，已有人工分数会保留。")
-    turns.forEach { turn -> Text("${turn.text("message")} · ${turn.text("status")} · r${turn.text("baseRevision")} → r${turn.text("publishedRevision")}"); val result = turn["publishedReport"] as? JsonObject ?: turn["proposedReport"] as? JsonObject; result?.let { AssessmentReport(it, turn.obj("baseReport")) }; if (turn["publishedReport"] is JsonObject && turn["proposedReport"] is JsonObject) { Text("AI 建议（人工分数保留前）"); AssessmentReport(turn.obj("proposedReport"), turn.obj("publishedReport")) }; turn.text("error").takeIf { it.isNotBlank() }?.let { Text(it, color = MaterialTheme.colorScheme.error) }; turn.text("jobId").takeIf { it.isNotBlank() }?.let { NativeJobExecution(repository, it, onSettled = { reload++; onChanged() }) } }
+    turns.forEach { turn -> Text("${turn.text("message")} · ${turn.text("status")} · r${turn.text("baseRevision")} → r${turn.text("publishedRevision")}"); val result = turn["publishedReport"] as? JsonObject ?: turn["proposedReport"] as? JsonObject; result?.let { AssessmentReport(it, turn.obj("baseReport")) }; if (turn["publishedReport"] is JsonObject && turn["proposedReport"] is JsonObject) { Text("AI 建议（人工分数保留前）"); AssessmentReport(turn.obj("proposedReport"), turn.obj("publishedReport")) }; turn.text("error").takeIf { it.isNotBlank() }?.let { Text(it, color = MaterialTheme.colorScheme.error) }; turn.text("jobId").takeIf { it.isNotBlank() }?.let { NativeJobExecution(repository, it, allowResume = enabled, onSettled = { reload++; onChanged() }) } }
     error?.let { Text(it, color = MaterialTheme.colorScheme.error) }; TextButton({ reload++ }) { Text("刷新追问记录") }
-    OutlinedTextField(message, { if (it.length <= 8000) message = it }, Modifier.fillMaxWidth(), label = { Text("指出固定材料中的遗漏或询问评分依据") }, minLines = 3)
+    ReferenceOutlinedTextField(message, { if (it.length <= 8000) message = it }, Modifier.fillMaxWidth(), label = "指出固定材料中的遗漏或询问评分依据", minLines = 3)
     Button({ val submitted = message.trim(); onConfirm("发送追问并复核当前评分 r${assessment.text("revision")}？这会调用模型；只使用固定材料，保留人工分数。") { check(repository.accountId == owner && repository.epoch == epoch); repository.requestDurably("followup:$projectId:${assessment.text("assessmentId")}", "POST", path, buildJsonObject { put("message", submitted); put("expectedRevision", assessment["revision"] ?: JsonPrimitive(1)) }); message = ""; reload++; onChanged() } }, enabled = enabled && message.isNotBlank() && turns.none { it.text("status") in listOf("queued", "running", "waiting_input") }) { Text("发送追问并复核") }
 }

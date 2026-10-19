@@ -8,6 +8,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import cn.buwei.nativeapp.NativeAiReferenceBadge
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import cn.buwei.nativeapp.data.ClientRepository
@@ -39,14 +40,14 @@ internal fun dataStatus(status:String)=mapOf("pending" to "尚未开始","queued
  var query by rememberSaveable{mutableStateOf("")};var applied by rememberSaveable{mutableStateOf("")};var purpose by rememberSaveable{mutableStateOf("")};var archived by rememberSaveable{mutableStateOf(false)}
  TaskWorkspaceField("搜索资料标题",query,{query=it},200);OutlinedButton({applied=query.trim()}){Text("搜索资料")};TaskWorkspaceChoice("资料用途",listOf("" to "全部资料")+dataPurposes,purpose){purpose=it};TaskWorkspaceChoice("资料视图",listOf("false" to "当前资料","true" to "已归档"),archived.toString()){archived=it=="true"}
  val path="$base/resource-library?limit=50&q=${Uri.encode(applied)}&archived=$archived"+(if(purpose.isNotBlank())"&purpose=$purpose"else"")
- TaskWorkspacePage(repository,path,refresh){rows->if(rows.isEmpty())Text("当前视图暂无资料");rows.forEach{row->Card(Modifier.fillMaxWidth()){Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text(row.twText("title"),style=MaterialTheme.typography.titleMedium);Text((dataPurposes.firstOrNull{it.first==row.twText("purpose")}?.second?:"资料")+if(row.twText("resourceType")=="source")" · 来源原文"else" · 成果文档");if(row.dataFlag("systemManaged"))Text("系统背景 · 自动同步");if(row.twText("archivedAt").isNotBlank())Text("已归档 · 只读");Text("更新于 ${row.twText("updatedAt")}");OutlinedButton({resourceType=row.twText("resourceType");resourceId=row.twText("resourceId")}){Text("查看资料")}}}}}
+ TaskWorkspacePage(repository,path,refresh){rows->if(rows.isEmpty())Text("当前视图暂无资料");rows.forEach{row->Card(Modifier.fillMaxWidth()){Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text(row.twText("title"),style=MaterialTheme.typography.titleMedium);NativeAiReferenceBadge();Text((dataPurposes.firstOrNull{it.first==row.twText("purpose")}?.second?:"资料")+if(row.twText("resourceType")=="source")" · 来源原文"else" · 成果文档");if(row.dataFlag("systemManaged"))Text("系统背景 · 自动同步");if(row.twText("archivedAt").isNotBlank())Text("已归档 · 只读");Text("更新于 ${row.twText("updatedAt")}");OutlinedButton({resourceType=row.twText("resourceType");resourceId=row.twText("resourceId")}){Text("查看资料")}}}}}
  }
 }
 @Composable private fun DataWorkspaceDetail(repository:ClientRepository,project:String,type:String,id:String,refresh:Int,onMaterialAi:()->Unit,onChanged:()->Unit){
  val base=twBase(project);var resource by remember(type,id){mutableStateOf<JsonObject?>(null)};var error by remember{mutableStateOf<String?>(null)}
  LaunchedEffect(type,id,refresh){try{resource=repository.get("$base/resource-library/$type/${Uri.encode(id)}");error=null}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}}
  error?.let{Text(it,color=MaterialTheme.colorScheme.error)};val row=resource?:return
- Text(row.twText("title"),style=MaterialTheme.typography.titleLarge);Text("${dataPurposes.firstOrNull{it.first==row.twText("purpose")}?.second.orEmpty()} · 创建于 ${row.twText("createdAt")}")
+ Text(row.twText("title"),style=MaterialTheme.typography.titleLarge);NativeAiReferenceBadge();Text("${dataPurposes.firstOrNull{it.first==row.twText("purpose")}?.second.orEmpty()} · 创建于 ${row.twText("createdAt")}")
  if(type=="material")OutlinedButton(onMaterialAi){Text("AI 补位与成果采纳")}
  if(row.dataFlag("canManage")&&row.twText("archivedAt").isBlank()&&row.twText("deletedAt").isBlank()){var purpose by rememberSaveable(id,row.twText("revision")){mutableStateOf(row.twText("purpose"))};TaskWorkspaceChoice("修改资料用途",dataPurposes,purpose){purpose=it};TaskWorkspaceAction(repository,"保存资料用途","$base/resource-library/$type/$id",buildJsonObject{put("purpose",purpose);put("expectedRevision",twRevision(row))},"PATCH",confirmation="修改用途可能按项目配置继续后台文件处理，请核对后保存。",onSuccess={resource=it;onChanged()})}
  if(type=="material")DataWorkspaceMaterial(repository,project,row,refresh,onChanged)else DataWorkspaceSource(repository,project,row,refresh,onChanged)
@@ -71,7 +72,7 @@ internal fun dataStatus(status:String)=mapOf("pending" to "尚未开始","queued
  val base=twBase(project);val path="$base/materials/${resource.twText("resourceId")}";var material by remember(path){mutableStateOf<JsonObject?>(null)};var error by remember{mutableStateOf<String?>(null)}
  LaunchedEffect(path,refresh){try{material=repository.get(path);error=null}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}};error?.let{Text(it,color=MaterialTheme.colorScheme.error)};val row=material?:return
  if(row.dataFlag("systemManaged"))Text("系统背景由服务端同步，仅供查看。");val version=row["currentVersion"] as? JsonObject
- if(version!=null){Text("当前正文 · 第 ${version.twText("revision")} 版",style=MaterialTheme.typography.titleMedium);NativeMarkdown(version.twText("markdown"));version.twRows("attachments").forEach{file->DataWorkspaceContributors(file);if(file.twText("availability")=="unavailable")Text("${file.twText("name")}（原文件不可用）")else AttachmentActions(repository,project,file.twText("fileId"),file.twText("name"))};DataWorkspaceReference(repository,project,"material",version.twText("versionId"))}
+ if(version!=null){Text("当前正文 · 第 ${version.twText("revision")} 版",style=MaterialTheme.typography.titleMedium);NativeAiReferenceBadge();NativeMarkdown(version.twText("markdown"));version.twRows("attachments").forEach{file->DataWorkspaceContributors(file);if(file.twText("availability")=="unavailable")Text("${file.twText("name")}（原文件不可用）")else AttachmentActions(repository,project,file.twText("fileId"),file.twText("name"))};DataWorkspaceReference(repository,project,"material",version.twText("versionId"))}
  if(row.dataFlag("canEdit")&&row.twText("archivedAt").isBlank())NativeRichMaterialEditor(repository,path,row)
  if(row.dataFlag("canArchive")){val archived=row.twText("archivedAt").isNotBlank();TaskWorkspaceAction(repository,if(archived)"撤销材料归档"else"归档材料","$path/${if(archived)"unarchive"else"archive"}",buildJsonObject{put("expectedRevision",twRevision(row))},confirmation=if(archived)"恢复这份材料？"else"归档材料将退出当前资料选择，历史固定版本保留。",onSuccess={onChanged()})}
  DataWorkspaceVersions(repository,project,row)

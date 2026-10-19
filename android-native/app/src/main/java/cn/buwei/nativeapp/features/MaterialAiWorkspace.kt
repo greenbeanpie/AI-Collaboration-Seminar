@@ -60,14 +60,14 @@ internal suspend fun aiAllPages(repository:ClientRepository,path:String):List<Js
         if(!aiEnabled)Text("AI 当前不可用；仍可阅读历史和核对已有草稿。")
         error?.let{Text(it,color=MaterialTheme.colorScheme.error)}
         TaskWorkspaceChoice("协助方式",listOf("do" to "直接起草","guide" to "引导完成","review_only" to "仅审阅"),mode){mode=it;rememberComposer()}
-        TaskWorkspaceField("角色或任务背景",role,{role=it;rememberComposer()},200)
-        TaskWorkspaceField("本次协助要求",instruction,{instruction=it;rememberComposer()},4000,3)
+        TaskWorkspaceField("角色或任务背景",role,{role=it;rememberComposer()},200,aiReference=true)
+        TaskWorkspaceField("本次协助要求",instruction,{instruction=it;rememberComposer()},4000,3,aiReference=true)
         Text("关联任务（可选）",style=MaterialTheme.typography.titleSmall)
         AiChoice(tasks,"taskId","title",task){task=it;rememberComposer()}
         AiVersionChoices("固定成果版本",materials,"materialId",chosenMaterials){chosenMaterials=it}
         AiVersionChoices("固定来源版本",sources,"sourceId",chosenSources){chosenSources=it}
         Row {Checkbox(search,{search=it});Text("允许联网检索")}
-        if(search)TaskWorkspaceField("检索内容",query,{query=it},500)
+        if(search)TaskWorkspaceField("检索内容",query,{query=it},500,aiReference=true)
         Button(onClick={confirm="发起 AI 协作？本次会调用已配置模型，可能产生费用。选择的材料与来源版本将固定用于本轮。" to {
             val result=write("$base/agent-sessions",buildJsonObject{put("mode",mode);role.takeIf{it.isNotBlank()}?.let{put("roleTemplate",it)};put("taskId",task?.let(::JsonPrimitive)?:JsonNull);put("instruction",instruction.takeIf{it.isNotBlank()}?.let(::JsonPrimitive)?:JsonNull);put("materialVersionIds",JsonArray(chosenMaterials.sorted().map(::JsonPrimitive)));put("sourceVersionIds",JsonArray(chosenSources.sorted().map(::JsonPrimitive)));put("allowSearch",search);if(search)put("searchQuery",query.trim())})
             selected=result.text("sessionId");job=result.text("jobId");refresh++
@@ -86,7 +86,7 @@ internal suspend fun aiAllPages(repository:ClientRepository,path:String):List<Js
                 }}
             }
             if(current.text("capability")=="guide"&&current.text("status")=="active") {
-                TaskWorkspaceField("回答 AI 的问题",answer,{answer=it;drafts.scheduleSave("agent-answer:$projectId:$selected",buildJsonObject{put("text",it)})},8000,3)
+                TaskWorkspaceField("回答 AI 的问题",answer,{answer=it;drafts.scheduleSave("agent-answer:$projectId:$selected",buildJsonObject{put("text",it)})},8000,3,aiReference=true)
                 LaunchedEffect(selected){drafts.read("agent-answer:$projectId:$selected")?.let{answer=it.text("text")}}
                 Button(onClick={confirm="提交回答并继续引导？这可能继续调用模型。" to {val result=write("$base/agent-sessions/${Uri.encode(selected)}/turns",buildJsonObject{put("content",answer.trim())});job=result.text("jobId");answer="";drafts.remove("agent-answer:$projectId:$selected");refresh++}},enabled=aiEnabled&&!busy&&job==null&&answer.isNotBlank()){Text("提交本轮回答")}
             }

@@ -4,6 +4,8 @@ import android.net.Uri
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import cn.buwei.nativeapp.NativeAiReferenceBadge
+import cn.buwei.nativeapp.ReferenceOutlinedTextField
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import cn.buwei.nativeapp.data.ClientRepository
@@ -23,8 +25,8 @@ import kotlinx.serialization.json.*
  error?.let{Text(it,color=MaterialTheme.colorScheme.error)};if(notice.isNotBlank())Text(notice)
  profile?.let{value->
   fun update(key:String,next:JsonElement)=run{profile=JsonObject(value+(key to next))}
-  listOf("bio" to "自我介绍（Markdown）","major" to "专业","specialties" to "技能与特长","preferredRoles" to "倾向项目职位").forEach{(key,label)->OutlinedTextField(value.text(key),{update(key,JsonPrimitive(it))},label={Text(label)},modifier=Modifier.fillMaxWidth());Row{Checkbox(value.obj("visibility")[key]?.jsonPrimitive?.booleanOrNull==true,{enabled->update("visibility",JsonObject(value.obj("visibility")+(key to JsonPrimitive(enabled))))});Text("公开$label")}}
-  OutlinedTextField(value.text("weeklyAvailableHours"),{text->if(text.isBlank())update("weeklyAvailableHours",JsonNull)else text.toDoubleOrNull()?.takeIf{it in 0.0..168.0}?.let{update("weeklyAvailableHours",JsonPrimitive(it))}},label={Text("每周可投入小时（0–168，可留空）")},modifier=Modifier.fillMaxWidth())
+  listOf("bio" to "自我介绍（Markdown）","major" to "专业","specialties" to "技能与特长","preferredRoles" to "倾向项目职位").forEach{(key,label)->ReferenceOutlinedTextField(value.text(key),{update(key,JsonPrimitive(it))},label=label,aiReference=value.flag("aiUseAllowed"),modifier=Modifier.fillMaxWidth());Row{Checkbox(value.obj("visibility")[key]?.jsonPrimitive?.booleanOrNull==true,{enabled->update("visibility",JsonObject(value.obj("visibility")+(key to JsonPrimitive(enabled))))});Text("公开$label")}}
+  ReferenceOutlinedTextField(value.text("weeklyAvailableHours"),{text->if(text.isBlank())update("weeklyAvailableHours",JsonNull)else text.toDoubleOrNull()?.takeIf{it in 0.0..168.0}?.let{update("weeklyAvailableHours",JsonPrimitive(it))}},label="每周可投入小时（0–168，可留空）",aiReference=value.flag("aiUseAllowed"),modifier=Modifier.fillMaxWidth())
   Row{Checkbox(value["searchable"]?.jsonPrimitive?.booleanOrNull==true,{update("searchable",JsonPrimitive(it))});Text("允许按完整用户名找到我")};Row{Checkbox(value["aiUseAllowed"]?.jsonPrimitive?.booleanOrNull==true,{update("aiUseAllowed",JsonPrimitive(it))});Text("允许项目 AI 使用个人资料")}
   Text("服务端资料版本：${value.text("revision")}");Button({confirmation="save"},enabled=!busy){Text("保存资料与隐私设置")};TextButton({confirmation="reload"},enabled=!busy){Text("读取服务端资料并放弃本机编辑")}
   OutlinedButton({action{loadCandidates(false)}},enabled=!busy){Text("读取旧项目资料导入候选")}
@@ -36,7 +38,7 @@ import kotlinx.serialization.json.*
   if(cursor!=null)TextButton({action{loadCandidates(true)}},enabled=!busy){Text("更多旧资料候选")}
  }
  Text("查找公开个人资料",style=MaterialTheme.typography.titleMedium);OutlinedTextField(username,{username=it},label={Text("完整用户名")},modifier=Modifier.fillMaxWidth());Button({action{require(Regex("[A-Za-z0-9_-]{3,32}").matches(username.trim())){"请填写完整用户名"};val result=accountWorkspaceRequest(repository,"GET","/api/v1/profiles/search?username="+Uri.encode(username.trim()),owner=owner,epoch=epoch);val found=(result["items"]as? JsonArray).orEmpty().firstOrNull()?.jsonObject;if(found==null){publicProfile=null;notice="未找到可公开显示的个人资料"}else publicProfile=accountWorkspaceRequest(repository,"GET","/api/v1/profiles/"+Uri.encode(found.text("username")),owner=owner,epoch=epoch)["profile"]as? JsonObject}},enabled=!busy&&username.isNotBlank()){Text("精确查找")}
- publicProfile?.let{person->Card{Column(Modifier.padding(12.dp)){Text(person.text("displayName"));listOf("bio" to "自我介绍","major" to "专业","specialties" to "技能","preferredRoles" to "倾向职位").forEach{(key,label)->if(person.containsKey(key))Text("$label：${person.text(key)}")}}}}
+ publicProfile?.let{person->Card{Column(Modifier.padding(12.dp)){Text(person.text("displayName"));listOf("bio" to "自我介绍","major" to "专业","specialties" to "技能","preferredRoles" to "倾向职位").forEach{(key,label)->if(person.containsKey(key)){Text("$label：${person.text(key)}");if(person.flag("aiUseAllowed"))NativeAiReferenceBadge()}}}}}
  confirmation?.let{chosen->AlertDialog(onDismissRequest={confirmation=null},title={Text(if(chosen.startsWith("import:"))"复制所选旧资料？"else if(chosen=="reload")"放弃本机编辑并重新读取？"else"保存资料及隐私授权？")},text={Text(if(chosen.startsWith("import:"))"所选字段替换当前草稿；导入的专业和技能暂不公开，并关闭 AI 授权。保存后才生效。"else if(chosen=="reload")"将以服务端版本替换本机未保存内容。"else"按当前资料版本保存，保留你选择的公开范围与 AI 使用授权。")},confirmButton={TextButton({confirmation=null;action{when{
   chosen=="save"->{val body=accountPersonalBody(profile!!,imports);val schema=NativeContracts.operations.first{it.method=="PUT"&&it.path=="/api/v1/auth/personal-profile"}.schema;validate(schema,body)?.let{error(it)};profile=accountWorkspaceRequest(repository,"PUT","/api/v1/auth/personal-profile",body,owner,epoch);saved=profile;imports=JsonArray(emptyList());notice="资料与隐私设置已保存"}
   chosen=="reload"->{reload();notice="已读取服务端版本"}

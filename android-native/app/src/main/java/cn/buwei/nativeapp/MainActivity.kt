@@ -102,6 +102,7 @@ class MainActivity:ComponentActivity() {
         val theme by appearance.mode.collectAsStateWithLifecycle(initialValue="system")
         val dark=theme=="dark" || (theme=="system" && isSystemInDarkTheme())
         BackHandler(user!=null&&section!="projects"){if(projectId!=null&&section!="overview")navigate("overview")else openGlobal("projects")}
+        NativeReferencePreferences(appearance,user?.get("id")?.jsonPrimitive?.contentOrNull) {
         NativeTheme(dark) {
             Surface(Modifier.fillMaxSize()) {
                 if(busy) Box(Modifier.fillMaxSize().padding(32.dp)) { CircularProgressIndicator() }
@@ -121,7 +122,7 @@ class MainActivity:ComponentActivity() {
                             if(section=="profile") AccountNavigation(user!!)
                             Box(Modifier.weight(1f).fillMaxWidth()) { key(repository.accountId,repository.epoch,section,projectId,model.destination) {
                                 when(section) {
-                                    "appearance" -> Column(Modifier.padding(20.dp)) { Text("外观",style=MaterialTheme.typography.headlineMedium); listOf("system" to "跟随系统","light" to "浅色","dark" to "深色").forEach { (key,title)->TextButton(onClick={lifecycleScope.launch {appearance.setMode(key)}}) {Text((if(theme==key) "✓ " else "")+title)} } }
+                                    "appearance" -> NativeAppearanceSettings(theme) { appearance.setMode(it) }
                                     "offline" -> OfflineView(repository)
                                     "media" -> MediaWorkspace(repository,projectId){model.workspaceActive=it}
                                     "export" -> projectId?.let {ExportWorkspace(repository,it)}
@@ -137,6 +138,7 @@ class MainActivity:ComponentActivity() {
                 fatal?.let { message->AlertDialog(onDismissRequest={fatal=null},title={Text("操作提示")},text={Text(message)},confirmButton={TextButton(onClick={fatal=null}) {Text("知道了")}}) }
             }
         }
+        }
         LaunchedEffect(user?.get("id")) { if(user!=null) {
             if(Build.VERSION.SDK_INT>=33) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
             cn.buwei.nativeapp.push.NativePushRegistration.refresh(this@MainActivity,repository,lifecycleScope)
@@ -150,7 +152,7 @@ class MainActivity:ComponentActivity() {
             Text("原生安卓预览版",style=MaterialTheme.typography.headlineSmall)
             Text("使用原有账户登录。仅登录验证在系统浏览器完成，项目界面使用安卓原生组件。旧版未同步资料仍保留在旧版中。",Modifier.padding(vertical=16.dp))
             Button(onClick={ lifecycleScope.launch { busy=true; try { val url=auth.begin(); CustomTabsIntent.Builder().build().launchUrl(this@MainActivity,url.toUri()) } catch(e:Exception) { fatal=e.message } finally { busy=false } } },modifier=Modifier.fillMaxWidth()) {Text("登录 / 注册")}
-            Text("首次使用需要网络；登录服务需部署配套原生授权接口。",Modifier.padding(top=16.dp),style=MaterialTheme.typography.bodySmall)
+            Text("首次登录需要联网，并在系统浏览器中完成账户验证。",Modifier.padding(top=16.dp),style=MaterialTheme.typography.bodySmall)
         }
     }
     @Composable private fun ProjectNavigation() {

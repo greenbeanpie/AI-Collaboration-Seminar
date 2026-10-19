@@ -14,6 +14,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+. (Join-Path $PSScriptRoot 'adb-artifact-path.ps1')
 
 function Invoke-Adb([string[]]$Arguments, [switch]$AllowFailure) {
     $result = & $Adb '-s' $Serial @Arguments 2>&1
@@ -77,6 +78,7 @@ function Get-Pss([string]$Text) {
     return $null
 }
 if ($ValidateOnly) {
+    Test-AdbArtifactKey
     $fixture = "  PID PPID NAME`n12 1 test.app`n13 1 test.app:worker`n99 1 com.google.android.webview:sandboxed"
     $activity = "  *APP* UID 99000 ProcessRecord{abc 99:com.google.android.webview:sandboxed/u0ai0}`n    packageList={test.app}`n  *APP* UID 99001 ProcessRecord{def 98:webview:other/u0ai1}`n    packageList={other.app}`n"
     $parsed = @(Read-Processes 'test.app' $fixture $activity)
@@ -91,8 +93,9 @@ $targetPackages=@($NativePackage);if(!$NativeOnly){$targetPackages+=$LegacyPacka
 foreach ($identifier in (@($NativeActivity)+$targetPackages)) {
     if ($identifier -notmatch '^[A-Za-z0-9_.]+$') { throw 'Invalid package/activity identifier' }
 }
+$artifactKey = ConvertTo-AdbArtifactKey $Serial
 New-Item -ItemType Directory -Force -Path $Output | Out-Null
-$reportDirectory = Join-Path (Resolve-Path -LiteralPath $Output) ("benchmark-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + "-$Serial")
+$reportDirectory = Join-Path (Resolve-Path -LiteralPath $Output) ("benchmark-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + "-$artifactKey")
 New-Item -ItemType Directory -Path $reportDirectory | Out-Null
 $metadata = @{
     serial = $Serial; startedAt = (Get-Date).ToUniversalTime().ToString('o'); trials = $Trials

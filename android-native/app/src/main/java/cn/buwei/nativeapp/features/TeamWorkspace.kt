@@ -8,6 +8,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import cn.buwei.nativeapp.NativeAiReferenceBadge
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import cn.buwei.nativeapp.data.ClientRepository
@@ -23,7 +24,7 @@ import kotlinx.serialization.json.*
  var query by rememberSaveable{mutableStateOf("")};var applied by rememberSaveable{mutableStateOf("")};TaskWorkspaceField("搜索成员姓名",query,{query=it},200);OutlinedButton({applied=query.trim()}){Text("搜索成员")}
  val canManage=me?.twCan("teamManage")==true;val owner=me?.twText("role")=="owner"
  TaskWorkspacePage(repository,"$base/members?limit=100&q=${Uri.encode(applied)}",refresh){rows->rows.forEach{member->key(member.twText("userId")){Card(Modifier.fillMaxWidth()){Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
- Text(member.twText("displayName"),style=MaterialTheme.typography.titleMedium);Text(if(member.twText("role")=="owner")"项目负责人"else"项目成员");Text(member.twText("username").ifBlank{member.twText("email")});workload[member.twText("userId")]?.let{Text("未完成任务预计投入：$it 小时")};val permissions=member["permissions"] as? JsonObject
+ Text(member.twText("displayName"),style=MaterialTheme.typography.titleMedium);NativeAiReferenceBadge();Text(if(member.twText("role")=="owner")"项目负责人"else"项目成员");Text(member.twText("username").ifBlank{member.twText("email")});workload[member.twText("userId")]?.let{Text("未完成任务预计投入：$it 小时")};val permissions=member["permissions"] as? JsonObject
  Text(teamPermissionLabels.filter{permissions?.get(it.first)?.jsonPrimitive?.booleanOrNull==true||member.twText("role")=="owner"}.joinToString("、"){it.second}.ifBlank{"未授予管理权限"})
  if(owner&&member.twText("role")!="owner")TeamWorkspacePermissions(repository,base,member){refresh++}
  if(canManage&&member.twText("role")!="owner"&&member.twText("userId")!=repository.accountId)TaskWorkspaceAction(repository,"移除该成员","$base/members/${Uri.encode(member.twText("userId"))}",method="DELETE",confirmation="确定移除 ${member.twText("displayName")}？对方将失去此项目访问权限。",onSuccess={refresh++})

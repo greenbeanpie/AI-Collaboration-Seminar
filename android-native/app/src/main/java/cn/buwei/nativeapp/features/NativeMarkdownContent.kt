@@ -23,8 +23,13 @@ import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 
 /** Fits an existing scroll container. Long documents remain available through explicit finite batches. */
+internal val LocalNativeContentNavigation=staticCompositionLocalOf<((String)->Unit)?>{null}
 @Composable fun NativeMarkdownContent(markdown:String,onNavigate:((String)->Unit)?=null){
- val blocks=remember(markdown){parseNativeMarkdown(markdown)};var shown by remember(markdown){mutableIntStateOf(16)}
+ val blocks=remember(markdown){parseNativeMarkdown(markdown)}
+ NativeTextBlocksContent(blocks,onNavigate?:LocalNativeContentNavigation.current)
+}
+@Composable internal fun NativeTextBlocksContent(blocks:List<NativeMarkdownBlock>,onNavigate:((String)->Unit)?=null){
+ var shown by remember(blocks){mutableIntStateOf(16)}
  Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(8.dp)){
   blocks.take(shown).forEach{block->NativeMarkdownBlockContent(block,onNavigate)}
   if(shown<blocks.size){Text("长文已显示 ${minOf(shown,blocks.size)} / ${blocks.size} 个文本块，后续内容保留待展开。",style=MaterialTheme.typography.labelMedium);OutlinedButton({shown=minOf(shown+16,blocks.size)}){Text("显示后续内容（还有 ${blocks.size-shown} 个文本块）")}}
@@ -46,7 +51,8 @@ import androidx.core.net.toUri
  val context=LocalContext.current;val color=MaterialTheme.colorScheme.primary;val codeBackground=MaterialTheme.colorScheme.surfaceContainerHighest
  val text=remember(runs,onNavigate,color,codeBackground,forceBold){buildAnnotatedString{
   runs.forEachIndexed{index,run->
-   val style=SpanStyle(fontWeight=if(run.bold||forceBold)FontWeight.Bold else null,fontStyle=if(run.italic)FontStyle.Italic else null,textDecoration=if(run.strike)TextDecoration.LineThrough else null,fontFamily=if(run.code)FontFamily.Monospace else null,background=if(run.code)codeBackground else Color.Unspecified)
+   val decorations=buildList{if(run.strike)add(TextDecoration.LineThrough);if(run.underline)add(TextDecoration.Underline)}
+   val style=SpanStyle(fontWeight=if(run.bold||forceBold)FontWeight.Bold else null,fontStyle=if(run.italic)FontStyle.Italic else null,textDecoration=if(decorations.isEmpty())null else TextDecoration.combine(decorations),fontFamily=if(run.code)FontFamily.Monospace else null,background=if(run.code)codeBackground else Color.Unspecified)
    val href=run.href;val target=href?.let(::nativeMarkdownHref);val clickable=target!=null&&(!target.startsWith("/app")||onNavigate!=null)
    withStyle(style){if(clickable){withStyle(SpanStyle(color=color,textDecoration=TextDecoration.Underline)){withLink(LinkAnnotation.Clickable(target,linkInteractionListener={
     if(target.startsWith("/app"))onNavigate?.invoke(target)else runCatching{context.startActivity(Intent(Intent.ACTION_VIEW,target.toUri()).addCategory(Intent.CATEGORY_BROWSABLE).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}.onFailure{Toast.makeText(context,"未找到可打开链接的浏览器",Toast.LENGTH_SHORT).show()}

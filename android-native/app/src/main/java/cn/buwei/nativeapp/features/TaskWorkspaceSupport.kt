@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import cn.buwei.nativeapp.ReferenceOutlinedTextField
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import cn.buwei.nativeapp.data.ClientRepository
@@ -39,7 +40,7 @@ internal fun twState(row:JsonObject)=mapOf("open" to "待领取","in_progress" t
  content(rows)
  if(cursor!=null)OutlinedButton({scope.launch{load(true)}},enabled=!busy){Text("加载更多")}
 }
-@Composable internal fun TaskWorkspaceField(label:String,value:String,onChange:(String)->Unit,max:Int=4000,lines:Int=1){OutlinedTextField(value,{if(it.length<=max)onChange(it)},Modifier.fillMaxWidth(),label={Text(label)},minLines=lines)}
+@Composable internal fun TaskWorkspaceField(label:String,value:String,onChange:(String)->Unit,max:Int=4000,lines:Int=1,aiReference:Boolean=false){ReferenceOutlinedTextField(value,{if(it.length<=max)onChange(it)},Modifier.fillMaxWidth(),label=label,aiReference=aiReference,minLines=lines)}
 @Composable internal fun TaskWorkspaceMemberPicker(members:List<JsonObject>,selected:String?,onChange:(String?)->Unit){
  var open by remember{mutableStateOf(false)};OutlinedButton({open=!open}){Text(members.firstOrNull{it.twText("userId")==selected}?.twText("displayName")?:"未安排负责人")}
  if(open){TextButton({onChange(null);open=false}){Text("不安排负责人")};members.forEach{member->TextButton({onChange(member.twText("userId"));open=false}){Text(member.twText("displayName").ifBlank{member.twText("username")})}}}

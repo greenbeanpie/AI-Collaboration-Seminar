@@ -11,6 +11,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+. (Join-Path $PSScriptRoot 'adb-artifact-path.ps1')
 function Invoke-Adb([string]$Device, [string[]]$Arguments, [switch]$AllowFailure) {
     $result = & $Adb '-s' $Device @Arguments 2>&1
     $exit = $LASTEXITCODE
@@ -29,6 +30,7 @@ function Inspect-Tree([string]$Text, [string]$ExpectedPackage) {
     }
 }
 if ($ValidateOnly) {
+    Test-AdbArtifactKey
     $fixture = '<hierarchy><node package="test.app" class="android.view.View" text="登录" content-desc=""/><node package="other.app" class="android.webkit.WebView" text="" content-desc=""/></hierarchy>'
     $checked = Inspect-Tree $fixture 'test.app'
     if ($checked.appNodeCount -ne 1 -or $checked.webViewNodeCount -ne 0) { throw 'UI tree attribution self-test failed' }
@@ -42,7 +44,7 @@ $directory = Join-Path (Resolve-Path -LiteralPath $Output) ('smoke-' + (Get-Date
 New-Item -ItemType Directory -Path $directory | Out-Null
 $results = [System.Collections.Generic.List[object]]::new()
 foreach ($device in $Serial) {
-    if ($device -notmatch '^[A-Za-z0-9_.:-]+$') { throw 'Invalid device identifier' }
+    $artifactKey = ConvertTo-AdbArtifactKey $device
     $result = @{ serial = $device; package = $Package; status = 'failed'; limitations = @('Initial unauthenticated screen only', 'Screenshot requires human visual inspection', 'UI tree absence of WebView alone is not a dependency audit', 'No login, production writes, or authenticated acceptance performed') }
     try {
         if ((Invoke-Adb $device @('shell', 'pm', 'path', $Package) -AllowFailure) -notmatch '(?m)^package:') { throw 'Native APK is not installed' }
@@ -50,17 +52,18 @@ foreach ($device in $Serial) {
         $result.density = Invoke-Adb $device @('shell', 'wm', 'density')
         $result.model = (Invoke-Adb $device @('shell', 'getprop', 'ro.product.model')).Trim()
         $launch = Invoke-Adb $device @('shell', 'am', 'start', '-W', '-n', "$Package/$Activity")
-        Set-Content -LiteralPath (Join-Path $directory "$device-launch.txt") -Value $launch -Encoding utf8
+        Set-Content -LiteralPath (Join-Path $directory "$artifactKey-launch.txt") -Value $launch -Encoding utf8
         if ($launch -notmatch '(?m)^Status:\s*ok\s*$') { throw 'Activity did not start successfully' }
         Start-Sleep -Seconds 2
-        $remoteXml = "/sdcard/buwei-native-smoke-$device.xml"
-        $remotePng = "/sdcard/buwei-native-smoke-$device.png"
-        Invoke-Adb $device @('shell', 'uiautomator', 'dump', $remoteXml) | Out-Null
-        Invoke-Adb $device @('pull', $remoteXml, (Join-Path $directory "$device-ui.xml")) | Out-Null
+        $remoteXml = "/sdcard/buwei-native-smoke-$artifactKey.xml"
+        $remotePng = "/sdcard/buwei-native-smoke-$artifactKey.png"
+        $dump = Invoke-Adb $device @('shell', 'uiautomator', 'dump', $remoteXml)
+        if ($dump -notmatch [regex]::Escape($remoteXml)) { throw "UI hierarchy dump did not produce expected artifact: $dump" }
+        Invoke-Adb $device @('pull', $remoteXml, (Join-Path $directory "$artifactKey-ui.xml")) | Out-Null
         Invoke-Adb $device @('shell', 'screencap', '-p', $remotePng) | Out-Null
-        Invoke-Adb $device @('pull', $remotePng, (Join-Path $directory "$device-screen.png")) | Out-Null
+        Invoke-Adb $device @('pull', $remotePng, (Join-Path $directory "$artifactKey-screen.png")) | Out-Null
         Invoke-Adb $device @('shell', 'rm', '-f', $remoteXml, $remotePng) | Out-Null
-        $checked = Inspect-Tree (Get-Content -Raw -LiteralPath (Join-Path $directory "$device-ui.xml")) $Package
+        $checked = Inspect-Tree (Get-Content -Raw -LiteralPath (Join-Path $directory "$artifactKey-ui.xml")) $Package
         $result.ui = $checked
         if ($checked.appNodeCount -eq 0) { throw 'No native application nodes; a system dialog may cover the app' }
         if ($checked.webViewNodeCount -gt 0) { throw 'WebView class found in native application UI tree' }
