@@ -38,7 +38,9 @@ public sealed partial class WorkspaceView
         var row = await repository.GetAsync("/jobs/" + Escape(id), token);
         var panel = Ui.Stack(Ui.Heading("AI 执行进度"), Ui.Label(Ui.Status(row.Text("status"))), Ui.Label(row.Id("progressMessage", "message")), Ui.Label(row.Text("error")), Action("刷新执行状态", () => ReplaceAsync(ct => JobAsync(id, ct))));
         var execution = row?["execution"];
-        if (execution != null) panel.Children.Add(Ui.Label("累计执行工具 " + execution.Text("toolCallCount") + " 次（含失败尝试）"));
+        if (execution != null) panel.Children.Add(Ui.Label("模型调用：本窗口 " + execution.Text("windowCalls") + " / " + execution.Text("limit") + " · 累计 " + execution.Text("totalCalls")));
+        var progress = row?["activity"]?["progress"];
+        if (progress.Text("unit") == "tool_call" && int.TryParse(progress.Text("completed"), out var attempts)) panel.Children.Add(Ui.Label("累计执行工具 " + attempts + " 次（含失败尝试）"));
         if (row?["result"] is JsonObject result) { if (result.Text("markdown").Length > 0) panel.Children.Add(Ui.Label(result.Text("markdown"))); if (result.Text("summary").Length > 0) panel.Children.Add(Ui.Label(result.Text("summary"))); }
         return panel;
     }
