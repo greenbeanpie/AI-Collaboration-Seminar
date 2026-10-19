@@ -131,6 +131,7 @@ class ClientRepository(val context:Context,private val testOrigin:String?=null,n
         raw.use { response ->
             assertOwner(owner,generation)
             val payload=response.body.string().let { runCatching { json.parseToJsonElement(it).jsonObject }.getOrNull() }
+            assertOwner(owner,generation)
             if(!response.isSuccessful) {
                 val error=payload?.get("error") as? JsonObject
                 throw ApiException(response.code,error?.get("code")?.jsonPrimitive?.contentOrNull?:"HTTP_${response.code}",error?.get("message")?.jsonPrimitive?.contentOrNull?:"请求失败 (${response.code})",response.header("X-Request-Id")?:"")

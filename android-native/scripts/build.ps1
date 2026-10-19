@@ -36,6 +36,6 @@ try {
   }
   & "$JavaRoot/bin/java.exe" --enable-native-access=ALL-UNNAMED -jar "$SdkRoot/build-tools/37.0.0/lib/apksigner.jar" verify --verbose --print-certs $destination | Set-Content "$destination.signature.txt"
   if($LASTEXITCODE){throw 'APK signature verification failed'}
-  [ordered]@{path=$destination;bytes=(Get-Item $destination).Length;sha256=(Get-FileHash $destination -Algorithm SHA256).Hash;mode=$mode;applicationId=if($Debug){'cn.buwei.mobile.nativepreview.debug'}else{'cn.buwei.mobile.nativepreview'};architecture='arm64-v8a and x86_64 (managed UI; universal APK)'}|ConvertTo-Json|Set-Content (Join-Path $output "$mode-artifact.json")
+  [ordered]@{path=$destination;sourceCommit=(& git -C $repo rev-parse HEAD).Trim();bytes=(Get-Item $destination).Length;sha256=(Get-FileHash $destination -Algorithm SHA256).Hash;mode=$mode;applicationId=if($Debug){'cn.buwei.mobile.nativepreview.debug'}else{'cn.buwei.mobile.nativepreview'};architecture='arm64-v8a and x86_64 (managed UI; universal APK)'}|ConvertTo-Json|Set-Content (Join-Path $output "$mode-artifact.json")
   Write-Output $destination
 } finally {foreach($name in $names){[Environment]::SetEnvironmentVariable($name,$previous[$name],'Process')}}

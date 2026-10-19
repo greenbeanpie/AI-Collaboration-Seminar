@@ -25,9 +25,6 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.core.graphics.createBitmap
-import androidx.media3.common.MediaItem
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.PlayerView
 import cn.buwei.mobile.RecordingService
 import cn.buwei.mobile.RecordingStore
 import cn.buwei.nativeapp.data.ClientRepository
@@ -159,9 +156,7 @@ private suspend fun uploadRecording(repository:ClientRepository,project:String,s
         error?.let {Text(it)}
         if(pages>0)Row {TextButton(onClick={page--},enabled=page>0){Text("上一页")};Text("${page+1} / $pages");TextButton(onClick={page++},enabled=page<pages-1){Text("下一页")}}
         if(file.extension.lowercase() in listOf("mp4","m4a","mp3","wav","webm")) {
-            val player=remember(file.path){ExoPlayer.Builder(context).build().apply {setMediaItem(MediaItem.fromUri(android.net.Uri.fromFile(file)));prepare()}}
-            DisposableEffect(player){onDispose{player.release()}}
-            AndroidView(factory={PlayerView(it).apply {this.player=player}},modifier=Modifier.fillMaxWidth().height(320.dp))
+            NativeMediaPlayer(file)
         } else Column(Modifier.weight(1f).verticalScroll(rememberScrollState())){bitmap?.let {Image(it.asImageBitmap(),contentDescription="文件预览",modifier=Modifier.fillMaxWidth())};if(text.isNotBlank())androidx.compose.foundation.text.selection.SelectionContainer {Text(text)}}
     }}}
 }

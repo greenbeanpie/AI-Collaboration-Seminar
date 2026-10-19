@@ -63,7 +63,6 @@ dependencies {
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
     implementation("org.bouncycastle:bcpkix-jdk15to18:1.86")
     implementation("androidx.media3:media3-exoplayer:1.11.1")
-    implementation("androidx.media3:media3-ui:1.11.1")
     testImplementation("junit:junit:4.13.2")
     testImplementation("com.squareup.okhttp3:mockwebserver:5.5.0")
     androidTestImplementation(platform("androidx.compose:compose-bom:2026.09.00"))

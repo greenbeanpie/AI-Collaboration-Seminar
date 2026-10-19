@@ -118,7 +118,8 @@ foreach ($package in @($NativePackage, $LegacyPackage)) {
         [long]$bytes = 0
         if ([long]::TryParse((Invoke-Adb @('shell', 'stat', '-c', '%s', $apkPath) -AllowFailure).Trim(), [ref]$bytes)) { $apkBytes += $bytes } else { $apkSizeKnown = $false }
     }
-    $metadata.packages[$package] = @{ debuggable = $details -match '(?m)flags=\[[^\]]*DEBUGGABLE'; installedApkBytes = $(if ($apkSizeKnown) { $apkBytes } else { $null }); installedApkPaths = $paths }
+    $hashes=@($paths | ForEach-Object { (Invoke-Adb @('shell','sha256sum',$_) -AllowFailure).Trim() })
+    $metadata.packages[$package] = @{ debuggable = $details -match '(?m)flags=\[[^\]]*DEBUGGABLE'; installedApkBytes = $(if ($apkSizeKnown) { $apkBytes } else { $null }); installedApkPaths = $paths; installedApkSha256 = $hashes }
 }
 $results = [System.Collections.Generic.List[object]]::new()
 $packages = @(@{ label = 'native'; name = $NativePackage; activity = $NativeActivity }, @{ label = 'legacy'; name = $LegacyPackage; activity = $null })
