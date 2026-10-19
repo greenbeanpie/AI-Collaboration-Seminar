@@ -57,6 +57,7 @@ class DataDocumentParityInstrumentedTest {
     "$base/materials/$material/versions"->response(buildJsonObject{put("items",buildJsonArray{if(formatComparison)add(version(current,2,"Current canonical"));add(version(historic,1,"Historic canonical"))});put("nextCursor",JsonNull)})
     "$base/materials/$material/versions/$current"->response(version(current,2,"Current canonical"))
     "$base/materials/$material/versions/$historic"->response(version(historic,1,"Historic canonical"))
+    "$base/comments"->response(buildJsonObject{put("items",buildJsonArray{});put("nextCursor",JsonNull)})
     else->MockResponse().setResponseCode(404).setBody("Unexpected loopback request $path")
    }
   }};server.start()
