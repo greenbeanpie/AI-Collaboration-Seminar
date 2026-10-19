@@ -90,21 +90,31 @@ public sealed partial class WorkspaceView
         }
         return panel;
     }
-    private Task<UIElement> CreationPreviewEditorAsync(JsonNode? draft, CancellationToken token)
+    private async Task<UIElement> CreationPreviewEditorAsync(JsonNode? draft, CancellationToken token)
     {
         var id = draft.Text("id"); var path = "/creation-drafts/" + Escape(id); var preview = draft?["preview"]; var goal = preview?["goal"] ?? draft?["payload"]?["goal"];
+        var local = await repository.Store.LoadDraftAsync("creation-preview:" + id);
+        if (local != null) { preview = local; goal = local["goal"]; }
+        var expected = local?["expectedRevision"].Copy() ?? draft?["revision"].Copy();
         var panel = Ui.Stack(Ui.Heading("人工核对目标与任务预览"), Ui.Label("修改不会自动创建项目。保存预览后返回创建确认。"));
         var goalTitle = Ui.Field("项目主目标", goal.Text("title") is { Length: > 0 } title ? title : draft?["payload"].Text("name"), max: 200); var goalDetail = Ui.Field("目标说明", goal.Text("detail"), true, 12000); panel.Children.Add(Ui.Card(goalTitle, goalDetail));
         var tasks = new List<(JsonObject Original, TextBox Title, TextBox Detail, TextBox Criteria, TextBox Hours, Border Card)>(); var cards = Ui.Stack(); panel.Children.Add(cards);
+        JsonObject CurrentDraft()
+        {
+            var rows = new JsonArray(); foreach (var task in tasks) { var item = (JsonObject)task.Original.DeepClone(); item["title"] = task.Title.Text; item["detail"] = task.Detail.Text; item["criteria"] = task.Criteria.Text; item["effortHours"] = task.Hours.Text; rows.Add(item); }
+            return new JsonObject { ["expectedRevision"] = expected.Copy(), ["goal"] = new JsonObject { ["title"] = goalTitle.Text, ["detail"] = goalDetail.Text }, ["tasks"] = rows };
+        }
         void Add(JsonNode? original)
         {
             if (tasks.Count >= 20) return;
             var item = original?.DeepClone() as JsonObject ?? new JsonObject { ["key"] = "t" + Guid.NewGuid().ToString("N")[..8], ["dependsOn"] = new JsonArray(), ["citations"] = new JsonArray() };
             var name = Ui.Field("任务名称", item.Text("title"), max: 200); var detail = Ui.Field("任务说明", item.Text("detail"), true); var criteria = Ui.Field("验收标准", item.Text("criteria"), true); var hours = Ui.Field("预计投入小时（0.25–200）", item.Text("effortHours") is { Length: > 0 } effort ? effort : "1", max: 8); var box = Ui.Stack(name, detail, criteria, hours); var card = Ui.Card(box); var entry = (item, name, detail, criteria, hours, card); tasks.Add(entry); cards.Children.Add(card);
+            TrackDraft("creation-preview:" + id, CurrentDraft, name, detail, criteria, hours);
             if (item.Rows("citations").Count > 0) box.Children.Add(Ui.Label("已保留 " + item.Rows("citations").Count + " 条固定来源引用。"));
             box.Children.Add(Action("删除此预览任务", () => { tasks.Remove(entry); cards.Children.Remove(card); return Task.CompletedTask; }, "从当前预览移除此任务？正式项目尚未创建。"));
         }
         foreach (var item in preview.Rows("tasks")) Add(item);
+        TrackDraft("creation-preview:" + id, CurrentDraft, goalTitle, goalDetail);
         panel.Children.Add(Action("添加预览任务", () => { Add(null); return Task.CompletedTask; }));
         panel.Children.Add(Action("保存人工核对的预览", async () =>
         {
@@ -114,8 +124,8 @@ public sealed partial class WorkspaceView
                 if (task.Title.Text.Trim().Length == 0 || task.Criteria.Text.Trim().Length == 0 || !double.TryParse(task.Hours.Text, out var hours) || !double.IsFinite(hours) || hours < .25 || hours > 200) throw new InvalidOperationException("每项任务需要名称、验收标准和 0.25–200 的投入小时。");
                 var item = (JsonObject)task.Original.DeepClone(); item["title"] = task.Title.Text.Trim(); item["detail"] = task.Detail.Text; item["criteria"] = task.Criteria.Text.Trim(); item["effortHours"] = hours; item["dependsOn"] = new JsonArray(item.Rows("dependsOn").Where(x => keys.Contains(x.ToString())).Select(x => x.DeepClone()).ToArray()); items.Add(item);
             }
-            await WriteAsync("POST", path + "/preview", new JsonObject { ["expectedRevision"] = draft?["revision"].Copy(), ["mode"] = "manual", ["goal"] = new JsonObject { ["title"] = goalTitle.Text.Trim(), ["detail"] = goalDetail.Text }, ["tasks"] = items, ["regenerate"] = true }); await ReplaceAsync(ct => CreationDraftAsync(id, ct));
+            await WriteAsync("POST", path + "/preview", new JsonObject { ["expectedRevision"] = expected.Copy(), ["mode"] = "manual", ["goal"] = new JsonObject { ["title"] = goalTitle.Text.Trim(), ["detail"] = goalDetail.Text }, ["tasks"] = items, ["regenerate"] = true }); await repository.Store.DeleteDraftAsync("creation-preview:" + id); draftDirty = false; saveCurrentDraft = null; await ReplaceAsync(ct => CreationDraftAsync(id, ct));
         }, "保存此目标与任务预览？保留各项任务的原始来源引用。", true));
-        return Task.FromResult<UIElement>(panel);
+        return panel;
     }
 }

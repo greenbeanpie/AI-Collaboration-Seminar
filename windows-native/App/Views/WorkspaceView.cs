@@ -73,7 +73,7 @@ public sealed partial class WorkspaceView : UserControl
             navigation.MenuItems.Add(new NavigationViewItemHeader { Content = project.Text("name") });
             foreach (var item in new[] { ("项目概览", "overview", Symbol.View), ("任务协作", "tasks", Symbol.Accept),
                 ("项目资料", "data", Symbol.Document), ("团队成员", "team", Symbol.People), ("标准与评估", "assessment", Symbol.Favorite),
-                ("项目 AI", "ai", Symbol.Message), ("项目活动", "activity", Symbol.Clock), ("项目设置", "project-settings", Symbol.Setting) }) Add(item.Item1, item.Item2, item.Item3);
+                ("项目 AI", "ai", Symbol.Message), ("答辩演练", "rehearsals", Symbol.Microphone), ("项目活动", "activity", Symbol.Clock), ("成果导出", "export", Symbol.Download), ("项目设置", "project-settings", Symbol.Setting) }) Add(item.Item1, item.Item2, item.Item3);
         }
         Add("通知", "notifications", Symbol.Message, true);
         Add("Agent Bridge", "bridge", Symbol.Link, true);
@@ -108,7 +108,7 @@ public sealed partial class WorkspaceView : UserControl
                 route = parts.Length > 2 ? parts[2] : "overview";
                 if (route == "tasks" && parts.Length > 3) { Show(await TaskDetailAsync(parts[3], token), token); return; }
             }
-            if (projectId == null && route is "overview" or "tasks" or "data" or "team" or "assessment" or "ai" or "activity" or "project-settings") route = "projects";
+            if (projectId == null && route is "overview" or "tasks" or "data" or "team" or "assessment" or "ai" or "activity" or "project-settings" or "rehearsals" or "export") route = "projects";
             var content = route switch
             {
                 "projects" or "dashboard" => await DashboardAsync(token), "create-project" => await CreateProjectAsync(token),
@@ -116,6 +116,7 @@ public sealed partial class WorkspaceView : UserControl
                 "data" or "materials" or "sources" => await DataAsync(token), "team" => await TeamAsync(token),
                 "assessment" or "assessments" or "reviews" => await AssessmentAsync(token), "ai" or "ai-chat" => await AiAsync(token),
                 "activity" or "ledger" => await ActivityAsync(token), "project-settings" => await ProjectSettingsAsync(token),
+                "rehearsals" or "rehearsal" => await RehearsalsAsync(token), "export" => await ExportAsync(token),
                 "account" or "settings" => await AccountAsync(token), "personal-profile" => await PersonalProfileAsync(token), "notifications" => await NotificationsAsync(token),
                 "support" or "help" => await SupportAsync(token), "bridge" or "agent-bridges" => await BridgeAsync(token),
                 "admin" => await AdminAsync(token), _ => Ui.Stack(Ui.Heading("暂不支持此入口"), Ui.Label("请从侧栏选择当前原生客户端已提供的页面。"))
@@ -201,16 +202,24 @@ public sealed partial class WorkspaceView : UserControl
         void Changed()
         {
             if (owner != repository.AccountId || generation != accountGeneration) return;
-            draftDirty = true; var pending = SaveAsync(); draftWrites.Add(pending);
-            _ = ObserveAsync(pending);
+            draftDirty = true; RegisterDraftWrite(SaveAsync());
         }
-        async Task ObserveAsync(Task pending) { try { await pending; draftWrites.Remove(pending); } catch (Exception error) { StatusChanged?.Invoke("本机草稿尚未保存：" + error.Message); } }
         foreach (var field in fields)
         {
             if (field is TextBox text) text.TextChanged += (_, _) => Changed();
             if (field is ComboBox combo) combo.SelectionChanged += (_, _) => Changed();
             if (field is ToggleSwitch toggle) toggle.Toggled += (_, _) => Changed();
             if (field is CheckBox check) { check.Checked += (_, _) => Changed(); check.Unchecked += (_, _) => Changed(); }
+        }
+    }
+    private void RegisterDraftWrite(Task pending)
+    {
+        var generation = accountGeneration; draftWrites.Add(pending); _ = ObserveAsync();
+        async Task ObserveAsync()
+        {
+            try { await pending; }
+            catch (Exception error) { if (generation == accountGeneration) { draftDirty = true; StatusChanged?.Invoke("本机草稿尚未保存：" + error.Message); } }
+            finally { draftWrites.Remove(pending); }
         }
     }
 }

@@ -15,6 +15,7 @@ public sealed partial class WorkspaceView
     {
         var panel = Page("项目资料", "集中管理来源、参考资料及成果文档。历史引用保持固定版本。");
         panel.Children.Add(Action("新增资料", () => ReplaceAsync(ct => IntakeAsync(ct)), primary: true));
+        panel.Children.Add(Action("附件与回收站", () => ReplaceAsync(FilesAsync)));
         var query = Ui.Field("搜索资料标题", max: 200); var purpose = Ui.Choice("资料用途", [("", "全部"), ("background", "项目背景"), ("reference", "参考资料"), ("output", "成果")]);
         var archived = new CheckBox { Content = "查看已归档资料" }; var list = Ui.Stack();
         async Task SearchAsync()
@@ -53,6 +54,11 @@ public sealed partial class WorkspaceView
         var resource = await repository.GetAsync(Base + "/resource-library/" + Escape(type) + "/" + Escape(id), token);
         var panel = Page(resource.Text("title"), (type == "material" ? "成果文档" : "来源原文") + " · " + resource.Text("purpose"));
         panel.Children.Add(Action("返回项目资料", () => NavigateAsync("data")));
+        if (resource.Flag("canManage") && resource.Text("archivedAt").Length == 0 && resource.Text("deletedAt").Length == 0)
+        {
+            var purpose = Ui.Choice("资料用途", [("background", "项目背景"), ("reference", "参考资料"), ("output", "成果")], resource.Text("purpose"));
+            panel.Children.Add(Ui.Card(purpose, Action("保存资料用途", async () => { await WriteAsync("PATCH", Base + "/resource-library/" + Escape(type) + "/" + Escape(id), new JsonObject { ["purpose"] = purpose.Value(), ["expectedRevision"] = resource?["revision"].Copy() }); await ReplaceAsync(ct => ResourceAsync(type, id, ct)); }, "修改用途可能按项目配置继续后台文件处理，请核对后保存。")));
+        }
         if (type == "material")
         {
             var path = Base + "/materials/" + Escape(id); var material = await repository.GetAsync(path, token); var version = material?["currentVersion"];
@@ -60,9 +66,11 @@ public sealed partial class WorkspaceView
             var editorHost = Ui.Stack(editor);
             var expected = material?["revision"].Copy();
             var key = "material:" + projectId + ":" + id; var saved = await repository.Store.LoadDraftAsync(key);
-            editor.Changed += doc => { draftDirty = true; var pending = repository.Store.SaveDraftAsync(key, new JsonObject { ["doc"] = doc, ["revision"] = expected.Copy() }); draftWrites.Add(pending); };
+            var editorOwner = repository.AccountId;
+            void BindEditor() { editor.Changed += doc => { if (repository.AccountId != editorOwner) return; draftDirty = true; RegisterDraftWrite(repository.Store.SaveDraftAsync(key, new JsonObject { ["doc"] = doc, ["revision"] = expected.Copy() })); }; }
+            BindEditor();
             saveCurrentDraft = () => repository.Store.SaveDraftAsync(key, new JsonObject { ["doc"] = editor.Document, ["revision"] = expected.Copy() });
-            if (saved?["doc"] != null && material.Flag("canEdit")) panel.Children.Add(Action("恢复本机正文草稿", () => { editor = new RichDocumentEditor(saved["doc"]); expected = saved["revision"].Copy(); editorHost.Children.Clear(); editorHost.Children.Add(editor); StatusChanged?.Invoke("已恢复基于版本 " + saved.Text("revision") + " 的本机草稿；保存时仍核对此版本。"); return Task.CompletedTask; }));
+            if (saved?["doc"] != null && material.Flag("canEdit")) panel.Children.Add(Action("恢复本机正文草稿", () => { editor = new RichDocumentEditor(saved["doc"]); BindEditor(); expected = saved["revision"].Copy(); editorHost.Children.Clear(); editorHost.Children.Add(editor); StatusChanged?.Invoke("已恢复基于版本 " + saved.Text("revision") + " 的本机草稿；保存时仍核对此版本。"); return Task.CompletedTask; }));
             panel.Children.Add(editorHost);
             foreach (var file in version.Rows("attachments")) { panel.Children.Add(Ui.Label(file.Text("name"))); if (OpenAttachmentRequested != null && file.Text("availability") != "unavailable") panel.Children.Add(Action("打开附件", () => OpenAttachmentRequested(projectId!, file.Text("fileId")))); }
             if (material.Flag("canEdit") && material.Text("archivedAt").Length == 0)
@@ -89,7 +97,9 @@ public sealed partial class WorkspaceView
                 var version = await repository.GetAsync(path + "/versions/" + Escape(source.Text("currentVersionId")), token);
                 panel.Children.Add(Ui.Card(Ui.Label("正文覆盖情况", 20), Ui.Label(Ui.Status(version.Text("status"))), Ui.Label(version.Text("extractionCoverage")), Ui.Label(version.Text("parseError"))));
                 panel.Children.Add(Action("资料目录、搜索与原文定位", () => ReplaceAsync(ct => ResourceIndexAsync("source", source.Text("currentVersionId"), ct))));
+                panel.Children.Add(Action("正文、要求与总结", () => ReplaceAsync(ct => SourceProcessingAsync(source, version, ct))));
             }
+            if (source.Flag("canDelete") && source.Text("fileId").Length == 0) panel.Children.Add(Action("移入回收站", async () => { await WriteAsync("DELETE", path, new JsonObject { ["expectedLifecycleVersion"] = source?["lifecycleVersion"].Copy() }); await NavigateAsync("data"); }, "将此来源移入回收站并停止相关处理？原文和历史引用保留，可按权限恢复。"));
         }
         return panel;
     }
