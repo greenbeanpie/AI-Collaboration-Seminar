@@ -41,6 +41,8 @@ adb -s emulator-5556 shell am instrument -w -r cn.buwei.mobile.nativepreview.deb
 
 性能脚本测量进程冷启动、PSS、可归属进程 CPU 和启动/空闲帧，保留每轮原始记录。只在同设备、相同认证状态和可比较构建类型下解释对比；无法归属 WebView 独立进程时不输出猜测的总量。模拟器结果不能证明真实手机耗电或长时间后台表现。
 
+启动配置已从 API 37 模拟器的未登录路径采集并打包。重新采集可运行 `./android-native/scripts/generate-baseline.ps1 -Serial emulator-5556`，然后重建 Release。脚本使用短目标路径绕过 Windows 下 AGP 自动拉取文件时的长路径失败；只操作预览包，不卸载、清数据或替换签名。已有正式签名预览包会拒绝被测试签名覆盖，应使用独立测试设备。
+
 ## 配套服务与配置
 
 后端新增 `0079_native_auth.sql` 和 `0080_native_push.sql` 增量迁移，以及 PKCE 授权/设备通知接口；前端新增受保护的浏览器授权确认页。一次性授权码和 S256 verifier 换取独立会话，不从 WebView 导出 Cookie。生产使用前需要按项目正常发布流程备份、应用迁移并部署配套服务；本次没有执行生产迁移或部署，旧服务未提供新增接口时预览版登录会失败。
@@ -54,3 +56,5 @@ FCM 公共客户端参数可通过 Gradle 属性 `firebaseAppId`、`firebaseApiK
 旧客户端和原有数据保持独立；用户未提交的仓库改动不属于本次迁移。未自动调用真实模型、创建付费任务、推送仓库或部署服务。真实账号浏览器授权、FCM 实收、4 小时录制/锁屏恢复、相机/蓝牙设备切换、手机和平板完整权限场景及性能目标须进一步验收。
 
 PDFBox 的可选旧 JPEG2000 解码器未打包；图片渲染走系统 PDFRenderer。BouncyCastle 依赖中未使用的 EST 信任辅助类会触发一项依赖 Lint 告警，Release 使用 `-checkdiscard` 强制确认整个 EST 包被移除，未放宽应用 TLS 校验。Baseline Profile 插件仍有 Gradle 弃用提示，升级 Gradle 大版本前需要更新插件。
+
+媒体预览使用 ExoPlayer 解码、系统 SurfaceView 及 Compose 播放控制，没有引入 `media3-ui` 的备用 WebView 字幕实现。最终 Release APK 的 DEX 扫描未发现 `android.webkit.WebView` 引用；当前未实现内嵌字幕的专用绘制。
