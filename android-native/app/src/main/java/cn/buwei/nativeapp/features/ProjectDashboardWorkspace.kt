@@ -10,6 +10,7 @@ import cn.buwei.nativeapp.NativeAiReferenceBadge
 import cn.buwei.nativeapp.ReferenceFieldLabel
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.testTag
 import cn.buwei.nativeapp.data.ClientRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
@@ -87,9 +88,26 @@ private fun ProjectDashboardContent(repository: ClientRepository, onProject: (St
         if(cursor != null) item { OutlinedButton({ scope.launch { load(true) } }, Modifier.fillMaxWidth(), enabled = !loading) { Text("加载更多项目") } }
         if(filter != "archived") {
             item { Text("待响应事项", style = MaterialTheme.typography.titleLarge); Text("已分配给有效项目成员、前置任务完成的未完成任务。", style = MaterialTheme.typography.bodySmall) }
-            items(actionable.take(30), key = { it.first.text("id") + ":" + it.second.text("taskId") }) { (project, task) -> OutlinedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) { Text(project.text("name"), style = MaterialTheme.typography.labelLarge); Text(task.text("title"), style = MaterialTheme.typography.titleMedium); val days = dashboardDays(task); Text(when { days == null -> "截止待确认"; days < 0 -> "已逾期 ${-days} 日"; days == 0L -> "今日截止"; else -> "截止还有 $days 日" }); TextButton({ onProject(project.text("id")); onNavigate("tasks") }) { Text("打开项目任务列表") } } } }
-            if(actionable.size > 30) item { Text("已展示最近30项，进入项目任务列表查看其余事项。") }
+            items(actionable, key = { it.first.text("id") + ":" + it.second.text("taskId") }) { (project, task) -> OutlinedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) { Text(project.text("name"), style = MaterialTheme.typography.labelLarge); Text(task.text("title"), style = MaterialTheme.typography.titleMedium); val days = dashboardDays(task); Text(when { days == null -> "截止待确认"; days < 0 -> "已逾期 ${-days} 日"; days == 0L -> "今日截止"; else -> "截止还有 $days 日" }); TextButton({ onNavigate("/app/projects/${Uri.encode(project.text("id"))}/tasks?task=${Uri.encode(task.text("taskId"))}") }, Modifier.testTag("dashboard-task:${project.text("id")}:${task.text("taskId")}")) { Text("查看任务详情") } } } }
             if(complete && actionable.isEmpty()) item { Text("暂时没有待响应事项。") }
+        } else {
+            item { Text("归档任务", style = MaterialTheme.typography.titleLarge) }
+            projects.forEach { project ->
+                val graph = graphs[project.text("id")]
+                item(key = "archive-title:${project.text("id")}") { Text(project.text("name"), style = MaterialTheme.typography.titleMedium) }
+                if(graph == null) item(key = "archive-state:${project.text("id")}") { Text(graphErrors[project.text("id")] ?: "读取归档任务…") }
+                else {
+                    val tasks = dashboardTasks(graph)
+                    if(tasks.isEmpty()) item(key = "archive-empty:${project.text("id")}") { Text("此项目暂无任务。") }
+                    items(tasks, key = { "archive:${project.text("id")}:${it.text("taskId")}" }) { task ->
+                        OutlinedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Text(task.text("title"), style = MaterialTheme.typography.titleMedium)
+                            Text(businessValue("status", JsonPrimitive(task.text("status"))))
+                            TextButton({ onNavigate("/app/projects/${Uri.encode(project.text("id"))}/tasks?task=${Uri.encode(task.text("taskId"))}") }) { Text("查看归档任务") }
+                        } }
+                    }
+                }
+            }
         }
     }
 }

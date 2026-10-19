@@ -5,6 +5,7 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
 import cn.buwei.nativeapp.NativeTheme
+import cn.buwei.nativeapp.nativeDestination
 import cn.buwei.nativeapp.data.ClientRepository
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.*
@@ -17,6 +18,7 @@ class ProjectDashboardWorkspaceInstrumentedTest {
     @get:Rule val compose = createComposeRule()
     private lateinit var server: MockWebServer; private lateinit var repository: ClientRepository
     private var multiProjectPage = false
+    private var largeTaskGraph = false
     private val gets = ConcurrentLinkedQueue<RecordedRequest>(); private val navigation = ConcurrentLinkedQueue<String>()
     private val project = "11111111-1111-4111-8111-111111111111"; private val second = "33333333-3333-4333-8333-333333333333"; private val user = "22222222-2222-4222-8222-222222222222"
     private fun response(value: String) = MockResponse().setHeader("Content-Type", "application/json").setBody("{\"data\":$value}")
@@ -25,7 +27,11 @@ class ProjectDashboardWorkspaceInstrumentedTest {
             if(request.path == "/api/v1/auth/native/exchange") return response("""{"user":{"id":"$user"}}""").addHeader("Set-Cookie", "ai_office_session=fixture")
             gets.add(request); val path = request.requestUrl!!.encodedPath
             if(path == "/api/v1/projects") { if(multiProjectPage) return response("""{"items":[{"id":"$project","name":"第一项目","status":"active","myRole":"owner"},{"id":"$second","name":"第二项目","status":"active","myRole":"member"}],"nextCursor":null}"""); val next = request.requestUrl!!.queryParameter("cursor") != null; val archived = request.requestUrl!!.queryParameter("status") == "archived"; return response("""{"items":[{"id":"${if(next) second else project}","name":"${if(next) "第二项目" else if(archived) "归档项目" else "第一项目"}","description":"真实模拟数据","status":"${if(archived) "archived" else "active"}","myRole":"owner","deadlineDate":null,"deadlinePrecision":"unknown"}],"nextCursor":${if(next || archived) "null" else "\"page-two\""}}""") }
-            if(path.endsWith("/tasks/graph")) { val done = path.contains(second); return response("""{"items":[{"taskId":"${if(done) "done-task" else "ready-task"}","title":"${if(done) "完成任务" else "可响应任务"}","status":"${if(done) "done" else "todo"}","revision":1,"assigneeId":"$user","lifecycleState":"${if(done) "accepted" else "open"}","dependsOnTaskIds":[],"unfinishedDependencyIds":[],"dueDate":null,"duePrecision":"unknown"}],"memberIds":["$user"]}""") }
+            if(path.endsWith("/tasks/graph") && largeTaskGraph) {
+                val tasks = (1..35).joinToString(",") { n -> """{"taskId":"00000000-0000-4000-8000-${n.toString().padStart(12,'0')}","title":"可响应任务${n.toString().padStart(2,'0')}","status":"todo","revision":1,"assigneeId":"$user","lifecycleState":"open","dependsOnTaskIds":[],"unfinishedDependencyIds":[],"duePrecision":"unknown"}""" }
+                return response("""{"items":[$tasks],"memberIds":["$user"]}""")
+            }
+            if(path.endsWith("/tasks/graph")) { val done = path.contains(second); return response("""{"items":[{"taskId":"${if(done) "done-task" else "44444444-4444-4444-8444-444444444444"}","title":"${if(done) "完成任务" else "可响应任务"}","status":"${if(done) "done" else "todo"}","revision":1,"assigneeId":"$user","lifecycleState":"${if(done) "accepted" else "open"}","dependsOnTaskIds":[],"unfinishedDependencyIds":[],"dueDate":null,"duePrecision":"unknown"}],"memberIds":["$user"]}""") }
             return response("""{"ai":{"user":{"used":1,"limit":20}},"storage":{"user":{"used":100,"limit":2000}}}""")
         } }; server.start(); repository = ClientRepository(InstrumentationRegistry.getInstrumentation().targetContext, server.url("/").toString().trimEnd('/'), "dashboard-${UUID.randomUUID()}-"); runBlocking { repository.exchange("fixture", "fixture") }
     }
@@ -57,4 +63,26 @@ class ProjectDashboardWorkspaceInstrumentedTest {
         click("项目筛选：全部当前项目"); compose.onNodeWithText("已归档项目").performClick(); waitFor("归档项目")
         assertTrue(gets.any { it.requestUrl?.queryParameter("status") == "archived" }); assertTrue(gets.none { it.requestUrl?.queryParameter("status") == "done" })
     }
+    @Test fun everyLoadedActionableTaskRemainsReachableBeyondThirtyAndOpensExactTask() {
+        largeTaskGraph = true
+        compose.setContent { NativeTheme { Surface { ProjectDashboardWorkspace(repository, {}, { navigation.add(it) }) } } }
+        waitFor("可响应任务35")
+        compose.onNodeWithText("可响应任务35").assertExists()
+        // Scope the click to the target task's card instead of another composed task.
+        compose.onNodeWithTag("dashboard-task:$project:00000000-0000-4000-8000-000000000035")
+            .performScrollTo().performClick()
+        assertEquals("/app/projects/$project/tasks?task=00000000-0000-4000-8000-000000000035", navigation.last())
+        assertNotNull(nativeDestination(navigation.last()))
+        assertTrue(gets.all { it.method == "GET" })
+    }
+    @Test fun archivedTaskIsVisibleAndOpensExactTaskWithoutMutatingProject() {
+        compose.setContent { NativeTheme { Surface { ProjectDashboardWorkspace(repository, {}, { navigation.add(it) }) } } }
+        click("项目筛选：全部当前项目"); compose.onNodeWithText("已归档项目").performClick()
+        waitFor("归档任务"); waitFor("可响应任务"); click("查看归档任务")
+        assertEquals("/app/projects/$project/tasks?task=44444444-4444-4444-8444-444444444444", navigation.last())
+        assertTrue(gets.any { it.requestUrl?.queryParameter("status") == "archived" })
+        assertNotNull(nativeDestination(navigation.last()))
+        assertTrue(gets.all { it.method == "GET" })
+    }
+
 }
