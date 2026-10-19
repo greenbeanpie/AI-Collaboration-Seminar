@@ -6,6 +6,7 @@ using Buwei.Windows.Core;
 var results = new List<string>();
 void Check(bool condition, string name) { if (!condition) throw new Exception(name); results.Add(name); }
 Check(ClientPaths.Normalize("/projects") == "/api/v1/projects", "API prefix");
+Check(ClientPaths.Normalize("/projects?q=%23note%20..") == "/api/v1/projects?q=%23note%20..", "Encoded search content is not interpreted as a path");
 foreach (var path in new[] { "https://evil.test", "//evil.test/a", "/../x", "/projects#x", "/projects\\x" })
 {
     var rejected = false; try { ClientPaths.Normalize(path); } catch (ArgumentException) { rejected = true; }
@@ -36,6 +37,15 @@ var denied = false; try { await store.EnqueueAsync("new", "POST", "/api/v1/proje
 Check(denied, "Revocation prevents enqueue");
 await store.RestoreAccessAsync("p");
 Check(!await store.IsRevokedAsync("p"), "Successful project access restores permission marker");
+await store.EnqueueAsync("local-task", "POST", "/api/v1/projects/p/tasks", new JsonObject { ["title"] = "新任务" });
+await store.EnqueueAsync("dependent", "PATCH", "/api/v1/projects/p/tasks/local-task", new JsonObject { ["dependsOnTaskIds"] = new JsonArray("local-task") });
+var created = (await store.WritesAsync()).Single(x => x.Id == "local-task");
+await store.ConfirmWriteAsync(created, new JsonObject { ["taskId"] = "server-task", ["title"] = "新任务", ["revision"] = 1 });
+var dependent = (await store.WritesAsync()).Single(x => x.Id == "dependent");
+Check(dependent.Path.EndsWith("/server-task") && JsonNode.Parse(dependent.Body)?["dependsOnTaskIds"]?[0]?.ToString() == "server-task", "Create confirmation atomically remaps dependent task identities");
+await store.SaveSnapshotAsync("/api/v1/projects/p/tasks?limit=50&q=", new JsonObject { ["items"] = new JsonArray(new JsonObject { ["taskId"] = "server-task", ["title"] = "旧标题" }) });
+await store.ConfirmWriteAsync(dependent, new JsonObject { ["taskId"] = "server-task", ["title"] = "服务端已提交", ["revision"] = 2 });
+Check((await store.ReadSnapshotAsync("/api/v1/projects/p/tasks?q=&limit=50"))?.Data?["items"]?[0]?["title"]?.ToString() == "服务端已提交", "Acknowledged server result refreshes cached list independent of query order");
 if (OperatingSystem.IsWindows())
 {
     var secrets = new SecretStore(Path.Combine(directory, "secrets"));

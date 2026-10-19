@@ -4,6 +4,7 @@ using Windows.Data.Pdf;
 using Windows.Storage;
 using Windows.Storage.Pickers;
 using Windows.Storage.Streams;
+using Windows.Graphics.Imaging;
 
 namespace Buwei.Windows.Platform;
 
@@ -26,7 +27,13 @@ public sealed class NativeFiles(Window window)
     public static async Task<BitmapImage> PreviewImageAsync(StorageFile file)
     {
         using var stream = await file.OpenReadAsync();
-        var bitmap = new BitmapImage { DecodePixelWidth = 1600 };
+        var decoder = await BitmapDecoder.CreateAsync(stream);
+        if (decoder.PixelWidth == 0 || decoder.PixelHeight == 0 || (ulong)decoder.PixelWidth * decoder.PixelHeight > 200_000_000)
+            throw new InvalidDataException("图片尺寸超出安全预览范围，请另存原文件后打开。");
+        var bitmap = new BitmapImage();
+        if (decoder.PixelWidth >= decoder.PixelHeight) bitmap.DecodePixelWidth = 1600;
+        else bitmap.DecodePixelHeight = 1600;
+        stream.Seek(0);
         await bitmap.SetSourceAsync(stream);
         return bitmap;
     }

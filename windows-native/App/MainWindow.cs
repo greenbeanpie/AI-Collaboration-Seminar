@@ -7,6 +7,8 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Windows.Storage;
+using Buwei.Windows.ViewModels;
+using Microsoft.UI.Xaml.Data;
 
 namespace Buwei.Windows;
 
@@ -16,6 +18,7 @@ public sealed class MainWindow : Window
     private readonly ContentControl content = new() { HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch };
     private readonly InfoBar status = new() { IsOpen = true, IsClosable = false, Message = "正在恢复账户" };
     private readonly ActivityGate activity = new();
+    private readonly MainWindowViewModel model = new();
     private readonly ClientRepository repository;
     private readonly NativeAuth auth;
     private readonly NativeFiles files;
@@ -32,9 +35,13 @@ public sealed class MainWindow : Window
     private NativeUpdate? readyUpdate;
     private string? readyInstaller;
     private bool autoRestart = true;
+    private CancellationTokenSource transferStop = new();
+    private readonly List<CancellationTokenSource> retiredTransfers = [];
     public MainWindow()
     {
         Title = "补位 · Windows 原生";
+        layout.DataContext = model;
+        status.SetBinding(InfoBar.MessageProperty, new Binding { Source = model, Path = new PropertyPath(nameof(model.Status)), Mode = BindingMode.OneWay });
         var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Buwei.Windows.Native");
         Uri? origin = null;
         if (Environment.GetCommandLineArgs().Contains("--benchmark")) directory = Path.Combine(Path.GetTempPath(), "Buwei.Windows.Native.Benchmark");
@@ -56,22 +63,38 @@ public sealed class MainWindow : Window
         if (File.Exists(preference) && bool.TryParse(File.ReadAllText(preference), out var saved)) autoRestart = saved;
         repository.StatusChanged += message => DispatcherQueue.TryEnqueue(() => SetStatus(message));
         repository.AccountChanged += () => { if (initialized) DispatcherQueue.TryEnqueue(async () => await RunAsync(AccountChangedAsync)); };
-        var bar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Padding = new Thickness(16, 8, 16, 8) };
+        var bar = new Grid { ColumnSpacing = 8, RowSpacing = 8, Padding = new Thickness(16, 8, 16, 8) };
         bar.Children.Add(new TextBlock { Text = "补位", FontSize = 22, Margin = new Thickness(0, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center });
         bar.Children.Add(Button("同步与冲突", SynchronizeAsync)); bar.Children.Add(Button("保存项目供离线使用", PrepareAsync));
         bar.Children.Add(Button("录制与恢复", CaptureAsync)); bar.Children.Add(Button("检查更新", () => UpdateAsync(true)));
+        bar.Children.Add(Button("取消文件传输", () => { transferStop.Cancel(); retiredTransfers.Add(transferStop); transferStop = new(); SetStatus("已请求停止文件传输，已保存的断点保留"); return Task.CompletedTask; }));
         var theme = new ComboBox { ItemsSource = new[] { "跟随系统", "浅色", "深色" }, SelectedIndex = 0, MinWidth = 110 };
         theme.SelectionChanged += (_, _) => layout.RequestedTheme = theme.SelectedIndex switch { 1 => ElementTheme.Light, 2 => ElementTheme.Dark, _ => ElementTheme.Default };
         bar.Children.Add(theme);
         bar.Children.Add(Button("退出登录", async () => { RequireSafe(); await repository.LogoutAsync(); SetStatus("已退出。本机草稿保留，重新授权同一账号后可继续。"); }));
+        bar.SizeChanged += (_, _) =>
+        {
+            var columns = Math.Max(1, (int)(bar.ActualWidth / 180));
+            if (bar.ColumnDefinitions.Count == columns) return;
+            bar.ColumnDefinitions.Clear(); bar.RowDefinitions.Clear();
+            for (var i = 0; i < columns; i++) bar.ColumnDefinitions.Add(new ColumnDefinition());
+            for (var i = 0; i < (bar.Children.Count + columns - 1) / columns; i++) bar.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            for (var i = 0; i < bar.Children.Count; i++) { Grid.SetColumn((FrameworkElement)bar.Children[i], i % columns); Grid.SetRow((FrameworkElement)bar.Children[i], i / columns); }
+        };
         Grid.SetRow(content, 1); Grid.SetRow(status, 2); layout.Children.Add(bar); layout.Children.Add(content); layout.Children.Add(status);
         layout.Background = (Brush)Application.Current.Resources["ApplicationPageBackgroundThemeBrush"];
         Content = layout; AppWindow.Resize(new global::Windows.Graphics.SizeInt32(1440, 960));
         tray = new NativeTray(this);
         tray.ShowRequested += () => { hidden = false; hiddenAt = DateTimeOffset.MinValue; };
         tray.ExitRequested += async () => await RunAsync(async () => { RequireSafe(); exiting = true; if (media != null) await media.DisposeAsync(); Close(); });
-        AppWindow.Closing += (_, args) => { if (!exiting) { args.Cancel = true; hidden = true; hiddenAt = DateTimeOffset.UtcNow; tray.HideWindow(); } };
-        Closed += (_, _) => { timer.Stop(); notifications?.Dispose(); tray.Dispose(); repository.Dispose(); };
+        AppWindow.Closing += async (_, args) =>
+        {
+            if (exiting) return;
+            args.Cancel = true;
+            if (workspace != null && !await workspace.SaveBeforeCloseAsync()) { SetStatus("请先保存编辑或清空敏感输入后再进入托盘", true); return; }
+            hidden = true; hiddenAt = DateTimeOffset.UtcNow; tray.HideWindow();
+        };
+        Closed += (_, _) => { timer.Stop(); transferStop.Cancel(); transferStop.Dispose(); foreach (var token in retiredTransfers) token.Dispose(); notifications?.Dispose(); tray.Dispose(); repository.Dispose(); };
         timer.Tick += async (_, _) => await BackgroundAsync();
     }
     public async Task InitializeAsync(string arguments)
@@ -88,14 +111,17 @@ public sealed class MainWindow : Window
     }
     private async Task RunAsync(Func<Task> work)
     { try { await work(); } catch (OperationCanceledException) { SetStatus("操作已取消"); } catch (Exception ex) { SetStatus(ex.Message, true); } }
-    private void SetStatus(string message, bool error = false) { status.Message = message; status.Severity = error ? InfoBarSeverity.Warning : InfoBarSeverity.Informational; }
+    private void SetStatus(string message, bool error = false) { model.Status = message; status.Severity = error ? InfoBarSeverity.Warning : InfoBarSeverity.Informational; }
     private void RequireSafe()
     {
         activity.RequireIdle();
+        if (repository.ActiveRequests > 0) throw new InvalidOperationException("正在与服务端通信，请等待当前操作结束");
         if (workspace?.HasUnsavedChanges == true) throw new InvalidOperationException("当前页面有未保存内容或敏感输入，请先保存或清空后操作");
     }
     private async Task AccountChangedAsync()
     {
+        model.Authenticated = repository.AccountId != null;
+        model.AccountName = repository.User?["displayName"]?.ToString() ?? "";
         seen.Clear(); seenAccount = null;
         if (media != null) { await media.DisposeAsync(); media = null; }
         if (repository.AccountId == null)
@@ -115,6 +141,9 @@ public sealed class MainWindow : Window
         workspace = new WorkspaceView(repository);
         workspace.StatusChanged += message => SetStatus(message);
         workspace.AddFileRequested = AddFileAsync; workspace.CaptureRequested = CaptureAsync; workspace.OpenAttachmentRequested = OpenAttachmentAsync;
+        workspace.VoiceRequested = (project, rehearsal) => ShowAsync("语音答辩", new NativeVoiceView(repository, project, rehearsal, activity) { Width = 580 });
+        workspace.ExportRequested = ExportAsync;
+        workspace.AddCreationFileRequested = AddCreationFileAsync;
         content.Content = workspace; await workspace.NavigateAsync("projects");
         SetStatus(repository.LastReadOffline ? "本机缓存版本" : "已连接现有项目服务");
     }
@@ -129,6 +158,7 @@ public sealed class MainWindow : Window
     }
     private async Task SynchronizeAsync()
     {
+        if (repository.AccountId == null) throw new InvalidOperationException("请先登录");
         using var busy = activity.Enter("同步"); await repository.SyncAsync();
         var rows = await repository.Store.WritesAsync(); var panel = new StackPanel { Spacing = 12, Width = 560 };
         panel.Children.Add(new TextBlock { Text = rows.Count == 0 ? "所有修改均已提交至服务端" : $"本机保留 {rows.Count} 项待处理修改", TextWrapping = TextWrapping.Wrap });
@@ -139,7 +169,42 @@ public sealed class MainWindow : Window
             group.Children.Add(new TextBlock { Text = "本机修改：" + Summary(JsonNode.Parse(row.Body)), TextWrapping = TextWrapping.Wrap });
             if (row.Server != null) group.Children.Add(new TextBlock { Text = "服务端当前版本：" + Summary(JsonNode.Parse(row.Server)), TextWrapping = TextWrapping.Wrap });
             group.Children.Add(Button("导出本机修改", async () => { var file = await files.SaveAsync("补位-待同步修改", ".json"); if (file != null) await File.WriteAllTextAsync(file.Path, row.Body); }));
+            if (row.Status != "pending")
+            {
+                var reviewed = new CheckBox { Content = "我已核对并备份本机修改，确认采用服务端版本" };
+                group.Children.Add(reviewed);
+                var discard = Button("采用服务端版本", async () => { if (reviewed.IsChecked != true) return; await repository.ResolveAsync(row.Id, null, true); group.IsHitTestVisible = false; group.Opacity = 0.5; SetStatus("已采用服务端版本，本机备份仍可保留"); });
+                discard.IsEnabled = false; reviewed.Checked += (_, _) => discard.IsEnabled = true; reviewed.Unchecked += (_, _) => discard.IsEnabled = false; group.Children.Add(discard);
+                if (row.Status == "conflict" && JsonNode.Parse(row.Body) is JsonObject local && JsonNode.Parse(row.Server ?? "null") is JsonObject server && server["revision"] != null && row.Method is "PUT" or "PATCH")
+                {
+                    RichDocumentEditor? editor = local["doc"] is JsonObject document ? new RichDocumentEditor(document) : null;
+                    if (editor != null) group.Children.Add(editor);
+                    var fields = new Dictionary<string, TextBox>();
+                    if (editor == null) foreach (var name in new[] { "title", "detail", "criteria" }) if (local[name] != null)
+                    { var field = new TextBox { Header = name switch { "title" => "任务名称", "detail" => "任务说明", _ => "验收要求" }, Text = local[name]!.ToString(), AcceptsReturn = true, TextWrapping = TextWrapping.Wrap }; fields.Add(name, field); group.Children.Add(field); }
+                    var mergeReviewed = new CheckBox { Content = "我已核对上方服务端版本，确认提交合并后的内容" }; group.Children.Add(mergeReviewed);
+                    var merge = Button("提交核对后的新版本", async () =>
+                    {
+                        if (mergeReviewed.IsChecked != true) return;
+                        var revised = local.DeepClone().AsObject(); revised["expectedRevision"] = server["revision"]!.DeepClone();
+                        if (editor != null) revised["doc"] = editor.Document;
+                        foreach (var field in fields) revised[field.Key] = field.Value.Text;
+                        await repository.ResolveAsync(row.Id, revised, false); group.IsHitTestVisible = false; group.Opacity = 0.5; SetStatus("合并操作已提交或保留为待同步");
+                    });
+                    merge.IsEnabled = false; mergeReviewed.Checked += (_, _) => merge.IsEnabled = true; mergeReviewed.Unchecked += (_, _) => merge.IsEnabled = false; group.Children.Add(merge);
+                }
+            }
             panel.Children.Add(group);
+        }
+        var fileDirectory = Path.Combine(AccountDirectory(), "files");
+        if (Directory.Exists(fileDirectory)) foreach (var journal in Directory.EnumerateFiles(fileDirectory, "upload-*.json"))
+        {
+            var recovery = JsonNode.Parse(await File.ReadAllTextAsync(journal));
+            var source = recovery?["sourcePath"]?.GetValue<string>();
+            var project = recovery?["projectId"]?.GetValue<string>(); var fileId = recovery?["fileId"]?.GetValue<string>();
+            if (source == null || !File.Exists(source) || !Guid.TryParse(project, out _) || !Guid.TryParse(fileId, out _) ||
+                !Path.GetFullPath(source).StartsWith(Path.GetFullPath(fileDirectory) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) continue;
+            panel.Children.Add(Button("继续上传本机文件 " + Path.GetFileName(source), async () => { await Transfers().UploadAsync(project!, fileId!, source, ct: transferStop.Token); SetStatus("断点上传已完成"); }));
         }
         await ShowAsync("同步与冲突", panel);
     }
@@ -157,7 +222,7 @@ public sealed class MainWindow : Window
     {
         var project = workspace?.CurrentProjectId ?? throw new InvalidOperationException("请先打开一个项目");
         using var busy = activity.Enter("离线准备"); await repository.PrepareProjectAsync(project);
-        SetStatus("项目文本已保存供离线使用；原文件需要另外下载");
+        SetStatus("已保存项目概览、任务、成果和资料元信息；原文分节及其他页面需在线打开后缓存，原文件需另外下载");
     }
     private NativeTransfers Transfers() => new(repository.Http, Path.Combine(AccountDirectory(), "files"), activity);
     private async Task AddFileAsync()
@@ -167,17 +232,29 @@ public sealed class MainWindow : Window
     }
     private async Task ConfirmUploadAsync(string project, string source, string contentType)
     {
+        var transferToken = transferStop.Token;
         var account = repository.AccountId ?? throw new InvalidOperationException("请先登录"); var info = new FileInfo(source);
-        var dialog = new ContentDialog { XamlRoot = layout.XamlRoot, Title = "确认上传原文件", Content = $"{info.Name}\n{info.Length / 1048576.0:F2} MiB\n不会自动调用 AI。", PrimaryButtonText = "上传", CloseButtonText = "保留在本机" };
+        var options = new StackPanel { Spacing = 12 };
+        options.Children.Add(new TextBlock { Text = $"{info.Name}\n{info.Length / 1048576.0:F2} MiB\n上传沿用项目现有处理策略；启用自动 AI 的项目可能产生费用。", TextWrapping = TextWrapping.Wrap });
+        var import = new CheckBox { Content = "同时导入 Office 正文供项目 AI 使用", IsChecked = OfficeTextReader.IsSupported(source), Visibility = OfficeTextReader.IsSupported(source) ? Visibility.Visible : Visibility.Collapsed };
+        options.Children.Add(import);
+        var dialog = new ContentDialog { XamlRoot = layout.XamlRoot, Title = "确认上传原文件", Content = options, PrimaryButtonText = "上传", CloseButtonText = "保留在本机" };
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
         using var busy = activity.Enter("文件暂存与上传");
         var owned = Path.Combine(AccountDirectory(), "files", "pending-" + Guid.NewGuid().ToString("N") + Path.GetExtension(source));
         Directory.CreateDirectory(Path.GetDirectoryName(owned)!);
-        await using (var input = File.OpenRead(source)) await using (var output = File.Create(owned)) await input.CopyToAsync(output);
+        await using (var input = File.OpenRead(source)) await using (var output = File.Create(owned)) await input.CopyToAsync(output, transferToken);
         if (account != repository.AccountId) throw new InvalidOperationException("账号已变化，文件保留在原账号目录");
-        var created = await repository.SendAsync("POST", $"/projects/{project}/files", new JsonObject { ["fileName"] = info.Name, ["contentType"] = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType });
+        var created = await repository.SendAsync("POST", $"/projects/{project}/files", new JsonObject { ["fileName"] = info.Name, ["contentType"] = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType }, ct: transferToken);
         var fileId = created?["fileId"]?.GetValue<string>() ?? throw new InvalidDataException("服务未分配文件");
-        await Transfers().UploadAsync(project, fileId, owned, new Progress<double>(value => SetStatus($"上传进度 {value:P0}")));
+        await using (var prepared = File.OpenRead(owned))
+        {
+            var digest = Convert.ToHexString(await System.Security.Cryptography.SHA256.HashDataAsync(prepared, transferToken));
+            var journal = new JsonObject { ["projectId"] = project, ["fileId"] = fileId, ["sourcePath"] = owned, ["sha256"] = digest };
+            await File.WriteAllTextAsync(Path.Combine(AccountDirectory(), "files", $"upload-{Guid.Parse(project)}-{Guid.Parse(fileId)}.json"), journal.ToJsonString(), transferToken);
+        }
+        await Transfers().UploadAsync(project, fileId, owned, new Progress<double>(value => SetStatus($"上传进度 {value:P0}")), transferToken);
+        if (import.IsChecked == true && OfficeTextReader.IsSupported(owned)) await NativeDocumentImport.ImportOfficeAsync(repository, project, fileId, owned, transferToken);
         SetStatus("原文件上传完成，本机副本已保留");
     }
     private async Task CaptureAsync()
@@ -195,15 +272,87 @@ public sealed class MainWindow : Window
         panel.Children.Add(Button("开始录像", async () => { await media.StartAsync(true, Mic(), Cam()); label.Text = "正在录像，可关闭此面板继续"; }));
         panel.Children.Add(Button("拍照", async () => { var path = await media.PhotoAsync(Cam()); label.Text = "已保存：" + Path.GetFileName(path); }));
         panel.Children.Add(Button("停止并保留", async () => { await media.StopAsync(); label.Text = "已保存，请重新打开面板确认上传"; }));
+        panel.Children.Add(Button("暂停录制", async () => { await media.PauseAsync(); label.Text = "已暂停，恢复后继续保留分段"; }));
+        panel.Children.Add(Button("恢复录制", async () => { await media.ResumeAsync(); label.Text = "正在录制"; }));
         foreach (var path in media.RecoveryFiles()) panel.Children.Add(Button("本机文件：" + Path.GetFileName(path), async () => await ConfirmUploadAsync(workspace?.CurrentProjectId ?? throw new InvalidOperationException("请先选择项目"), path, path.EndsWith(".mp4") ? "video/mp4" : "audio/mp4")));
         await ShowAsync("录制与恢复", panel);
     }
     private async Task OpenAttachmentAsync(string project, string fileId)
     {
-        var chosen = await files.SaveAsync("补位附件-" + fileId, ".bin"); if (chosen == null) return;
-        using var busy = activity.Enter("附件下载"); await Transfers().DownloadAsync($"/api/v1/projects/{project}/files/{fileId}/content", chosen.Path); SetStatus("原文件已保存");
+        var transferToken = transferStop.Token;
+        var entries = await repository.GetAsync($"/projects/{project}/files?limit=100");
+        var metadata = entries?["items"]?.AsArray().FirstOrDefault(x => x?["fileId"]?.GetValue<string>() == fileId);
+        var name = Path.GetFileName(metadata?["name"]?.GetValue<string>() ?? "附件.bin");
+        var extension = Path.GetExtension(name).ToLowerInvariant();
+        var cached = Path.Combine(AccountDirectory(), "files", Guid.Parse(fileId) + extension);
+        using (activity.Enter("附件下载")) await Transfers().DownloadAsync($"/api/v1/projects/{project}/files/{fileId}/content", cached, metadata?["sha256"]?.GetValue<string>(), transferToken);
+        var file = await StorageFile.GetFileFromPathAsync(cached);
+        var panel = new StackPanel { Spacing = 12, Width = 600 };
+        MediaPlayerElement? playback = null;
+        panel.Children.Add(Button("另存原文件", async () => { var target = await files.SaveAsync(name, extension.Length > 0 ? extension : ".bin"); if (target != null) { await using var input = File.OpenRead(cached); await using var output = File.Create(target.Path); await input.CopyToAsync(output); } }));
+        if (extension is ".png" or ".jpg" or ".jpeg" or ".webp") panel.Children.Add(new Image { Source = await NativeFiles.PreviewImageAsync(file), MaxHeight = 440, Stretch = Microsoft.UI.Xaml.Media.Stretch.Uniform });
+        else if (extension == ".pdf")
+        {
+            uint page = 0; var image = new Image { MaxHeight = 440, Stretch = Microsoft.UI.Xaml.Media.Stretch.Uniform }; var number = new TextBlock();
+            async Task Render() { var preview = await NativeFiles.PreviewPdfAsync(file, page); image.Source = preview.Image; number.Text = $"{page + 1} / {preview.Pages} 页"; }
+            panel.Children.Add(number); panel.Children.Add(image);
+            panel.Children.Add(Button("上一页", async () => { if (page > 0) { page--; await Render(); } }));
+            panel.Children.Add(Button("下一页", async () => { var current = await NativeFiles.PreviewPdfAsync(file, page); if (page + 1 < current.Pages) { page++; await Render(); } }));
+            await Render();
+        }
+        else if (OfficeTextReader.IsSupported(cached)) panel.Children.Add(new TextBlock { Text = await OfficeTextReader.ReadAsync(cached), TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
+        else if (extension is ".txt" or ".md" or ".csv" or ".json") panel.Children.Add(new TextBlock { Text = await NativeFiles.PreviewTextAsync(file), TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
+        else if (extension is ".mp4" or ".mp3" or ".m4a" or ".wav" or ".webm")
+            panel.Children.Add(playback = new MediaPlayerElement { Source = global::Windows.Media.Core.MediaSource.CreateFromStorageFile(file), AreTransportControlsEnabled = true, AutoPlay = false, MaxHeight = 400 });
+        else panel.Children.Add(new TextBlock { Text = "原文件已缓存，可另存后使用系统关联程序打开。", TextWrapping = TextWrapping.Wrap });
+        try { await ShowAsync(name, panel); }
+        finally { if (playback != null) { playback.MediaPlayer?.Pause(); playback.Source = null; } }
     }
-    private async Task ShowAsync(string title, UIElement body) => await new ContentDialog { XamlRoot = layout.XamlRoot, Title = title, Content = new ScrollViewer { Content = body, MaxHeight = 550 }, CloseButtonText = "关闭" }.ShowAsync();
+    private async Task AddCreationFileAsync(string draftId)
+    {
+        var source = await files.PickAsync(); if (source == null) return;
+        var info = new FileInfo(source.Path);
+        if (info.Length == 0 || info.Length > 10 * 1024 * 1024) throw new InvalidOperationException("创建草稿附件需为 1 字节至 10 MiB");
+        var confirm = new ContentDialog { XamlRoot = layout.XamlRoot, Title = "上传创建草稿附件", Content = info.Name + "\n附件处理将沿用现有服务端策略，音视频可能触发模型任务。", PrimaryButtonText = "上传", CloseButtonText = "取消" };
+        if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
+        using var busy = activity.Enter("创建草稿附件上传"); var account = repository.AccountId;
+        var draft = await repository.GetAsync("/creation-drafts/" + Guid.Parse(draftId));
+        await using var stream = File.OpenRead(source.Path);
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/creation-drafts/{Guid.Parse(draftId)}/files/{Guid.NewGuid()}?name={Uri.EscapeDataString(info.Name)}&expectedRevision={draft?["revision"]}");
+        request.Content = new StreamContent(stream, 65536); request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(source.ContentType.Length > 0 ? source.ContentType : "application/octet-stream");
+        using var response = await repository.Http.SendAsync(request, transferStop.Token);
+        if (account != repository.AccountId) throw new InvalidOperationException("账号已变化");
+        if (!response.IsSuccessStatusCode) throw new InvalidOperationException("草稿附件上传未确认，请刷新草稿核对，勿重复上传");
+        SetStatus("创建草稿附件已上传，请刷新后预览");
+    }
+    private async Task ExportAsync(string project, string format)
+    {
+        var bundle = await repository.GetAsync($"/projects/{Guid.Parse(project)}/export-bundle") ?? throw new InvalidDataException("导出内容为空");
+        var destination = await files.SaveAsync("补位项目成果", "." + format); if (destination == null) return;
+        using var busy = activity.Enter("项目导出");
+        // FileSavePicker creates/reserves the chosen file. Generate to a fresh sibling and
+        // replace only after completion; the picker has already confirmed overwrite intent.
+        var temporary = destination.Path + ".buwei-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            if (format == "pdf") await ProjectExport.PdfAsync(bundle, temporary);
+            else
+            {
+                var text = format == "json" ? bundle.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }) : ProjectExport.Markdown(bundle);
+                await File.WriteAllTextAsync(temporary, text);
+            }
+            File.Move(temporary, destination.Path, true);
+        }
+        finally { if (File.Exists(temporary)) File.Delete(temporary); }
+        SetStatus("已导出当前权限可见的项目成果");
+    }
+    private async Task ShowAsync(string title, UIElement body)
+    {
+        if (body is FrameworkElement element && !double.IsNaN(element.Width)) element.Width = Math.Min(element.Width, Math.Max(260, layout.ActualWidth - 140));
+        var dialog = new ContentDialog { XamlRoot = layout.XamlRoot, Title = title, Content = new ScrollViewer { Content = body, MaxHeight = Math.Max(240, Math.Min(550, layout.ActualHeight - 180)), HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }, CloseButtonText = "关闭" };
+        dialog.Resources["ContentDialogMaxWidth"] = Math.Min(840, Math.Max(300, layout.ActualWidth - 60));
+        await dialog.ShowAsync();
+    }
     private async Task UpdateAsync(bool interactive)
     {
         if (checkingUpdate) return; checkingUpdate = true;

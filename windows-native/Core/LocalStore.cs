@@ -88,6 +88,54 @@ public sealed class LocalStore : IDisposable
         using var cmd = Command(c, "UPDATE writes SET status=$s,error=$e,server=$v WHERE id=$i", ("$s", status), ("$e", error), ("$v", server?.ToJsonString()), ("$i", id)); return await cmd.ExecuteNonQueryAsync();
     });
     public async Task CompleteWriteAsync(string id) => await UseAsync(async c => { using var cmd = Command(c, "DELETE FROM writes WHERE id=$i", ("$i", id)); return await cmd.ExecuteNonQueryAsync(); });
+    public async Task ConfirmWriteAsync(PendingWrite row, JsonNode? result) => await UseAsync(async c =>
+    {
+        using var transaction = c.BeginTransaction();
+        var snapshots = new List<(string Path, JsonNode? Data)>();
+        using (var read = Command(c, "SELECT path,data FROM snapshots"))
+        {
+            read.Transaction = transaction;
+            await using var reader = await read.ExecuteReaderAsync();
+            while (await reader.ReadAsync()) snapshots.Add((reader.GetString(0), JsonNode.Parse(reader.GetString(1))));
+        }
+        var taskId = result?["taskId"]?.ToString();
+        foreach (var snapshot in snapshots)
+        {
+            var changed = false; var data = snapshot.Data;
+            if (snapshot.Path == row.Path && row.Method == "PUT" && row.Path.Contains("/materials/") && data is JsonObject material)
+            { material["currentVersion"] = result?.DeepClone(); material["revision"] = result?["revision"]?.DeepClone(); changed = true; }
+            else if (snapshot.Path == row.Path && row.Method == "PATCH" && data is JsonObject detail && result is JsonObject fields)
+            { foreach (var item in fields) detail[item.Key] = item.Value?.DeepClone(); changed = true; }
+            else if (taskId != null && snapshot.Path.StartsWith("/api/v1/projects/" + row.ProjectId + "/tasks", StringComparison.Ordinal) && data?["items"] is JsonArray items)
+            {
+                var index = items.ToList().FindIndex(x => x?["taskId"]?.ToString() == taskId || x?["taskId"]?.ToString() == row.Id);
+                if (index >= 0) { items[index] = result?.DeepClone(); changed = true; }
+                else if (row.Method == "POST" && row.Path.EndsWith("/tasks", StringComparison.Ordinal) && !snapshot.Path.Contains("cursor=") && !snapshot.Path.Contains("q=") && !snapshot.Path.Contains("assigneeId=") && !snapshot.Path.Contains("lifecycleState="))
+                { items.Insert(0, result?.DeepClone()); changed = true; }
+            }
+            if (!changed) continue;
+            using var update = Command(c, "UPDATE snapshots SET data=$d,saved=$t WHERE path=$p", ("$d", data?.ToJsonString() ?? "null"), ("$t", DateTimeOffset.UtcNow.ToString("O")), ("$p", snapshot.Path));
+            update.Transaction = transaction; await update.ExecuteNonQueryAsync();
+        }
+        if (taskId != null && taskId != row.Id && row.Method == "POST" && row.Path.EndsWith("/tasks", StringComparison.Ordinal))
+        {
+            var remaining = new List<(string Id, string Path, JsonObject Body)>();
+            using (var read = Command(c, "SELECT id,path,body FROM writes WHERE id!=$i AND status='pending'", ("$i", row.Id)))
+            {
+                read.Transaction = transaction; await using var reader = await read.ExecuteReaderAsync();
+                while (await reader.ReadAsync()) if (JsonNode.Parse(reader.GetString(2)) is JsonObject body) remaining.Add((reader.GetString(0), reader.GetString(1), body));
+            }
+            foreach (var next in remaining)
+            {
+                foreach (var field in new[] { "taskId", "targetId", "parentTaskId" }) if (next.Body[field]?.ToString() == row.Id) next.Body[field] = taskId;
+                if (next.Body["dependsOnTaskIds"] is JsonArray deps) for (var i = 0; i < deps.Count; i++) if (deps[i]?.ToString() == row.Id) deps[i] = taskId;
+                using var update = Command(c, "UPDATE writes SET path=$p,body=$b WHERE id=$i", ("$p", next.Path.Replace("/tasks/" + row.Id, "/tasks/" + taskId, StringComparison.Ordinal)), ("$b", next.Body.ToJsonString()), ("$i", next.Id));
+                update.Transaction = transaction; await update.ExecuteNonQueryAsync();
+            }
+        }
+        using var remove = Command(c, "DELETE FROM writes WHERE id=$i", ("$i", row.Id)); remove.Transaction = transaction; await remove.ExecuteNonQueryAsync();
+        transaction.Commit(); return 0;
+    });
     public async Task RevokeAsync(string project) => await UseAsync(async c =>
     {
         using var cmd = Command(c, "INSERT OR IGNORE INTO revoked VALUES($p); UPDATE writes SET status='blocked',error='项目权限已撤销' WHERE project=$p; DELETE FROM snapshots WHERE path=$root OR path LIKE $prefix;",

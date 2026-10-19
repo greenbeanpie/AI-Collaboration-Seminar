@@ -36,12 +36,12 @@ Section "补位"
     ${EndIf}
   ${EndIf}
   # Stage a new version independently. Failure never overwrites the active version.
-  IfFileExists "$INSTDIR\versions\${APP_VERSION}\Buwei.Windows.Native.exe" 0 newVersion
+  IfFileExists "$INSTDIR\Buwei.Windows.Native.versions\${APP_VERSION}\Buwei.Windows.Native.exe" 0 newVersion
   MessageBox MB_ICONSTOP "此版本已存在。请先通过设置卸载该版本后重装；本地数据将保留。"
   Abort
   newVersion:
   ClearErrors
-  SetOutPath "$INSTDIR\versions\${APP_VERSION}"
+  SetOutPath "$INSTDIR\Buwei.Windows.Native.versions\${APP_VERSION}"
   File /r "${PUBLISH_DIR}\*.*"
   ${If} ${Errors}
     MessageBox MB_ICONSTOP "新版本写入失败。旧版本和数据仍被保留。"
@@ -50,10 +50,10 @@ Section "补位"
   SetOutPath "$INSTDIR"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
   CreateDirectory "$SMPROGRAMS\补位原生客户端"
-  CreateShortcut "$SMPROGRAMS\补位原生客户端\补位.lnk" "$INSTDIR\versions\${APP_VERSION}\Buwei.Windows.Native.exe"
+  CreateShortcut "$SMPROGRAMS\补位原生客户端\补位.lnk" "$INSTDIR\Buwei.Windows.Native.versions\${APP_VERSION}\Buwei.Windows.Native.exe"
   WriteRegStr HKCU "Software\Classes\buwei-windows-native" "" "URL:Buwei Windows Native"
   WriteRegStr HKCU "Software\Classes\buwei-windows-native" "URL Protocol" ""
-  WriteRegStr HKCU "Software\Classes\buwei-windows-native\shell\open\command" "" '$\"$INSTDIR\versions\${APP_VERSION}\Buwei.Windows.Native.exe$\" $\"%1$\"'
+  WriteRegStr HKCU "Software\Classes\buwei-windows-native\shell\open\command" "" '$\"$INSTDIR\Buwei.Windows.Native.versions\${APP_VERSION}\Buwei.Windows.Native.exe$\" $\"%1$\"'
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Buwei.Windows.Native" "DisplayName" "补位 Windows 原生客户端"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Buwei.Windows.Native" "DisplayVersion" "${APP_VERSION}"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Buwei.Windows.Native" "UninstallString" '$\"$INSTDIR\Uninstall.exe$\"'
@@ -63,6 +63,9 @@ Section "Uninstall"
   DeleteRegKey HKCU "Software\Classes\buwei-windows-native"
   DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Buwei.Windows.Native"
   RMDir /r "$SMPROGRAMS\补位原生客户端"
-  RMDir /r "$INSTDIR"
+  # Never recursively remove the user-selected parent directory.
+  RMDir /r "$INSTDIR\Buwei.Windows.Native.versions"
+  Delete "$INSTDIR\Uninstall.exe"
+  RMDir "$INSTDIR"
   # Account databases, drafts and capture recovery files under LocalAppData are preserved.
 SectionEnd

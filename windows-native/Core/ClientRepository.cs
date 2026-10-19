@@ -19,6 +19,8 @@ public sealed class ClientRepository : IDisposable
     private readonly SecretStore secrets;
     private readonly SemaphoreSlim syncing = new(1);
     private long epoch;
+    private int activeRequests;
+    public int ActiveRequests => Volatile.Read(ref activeRequests);
     public HttpClient Http { get; }
     public LocalStore Store { get; }
     public string? AccountId => User?["id"]?.GetValue<string>();
@@ -147,8 +149,10 @@ public sealed class ClientRepository : IDisposable
         var started = epoch; var account = AccountId;
         try
         {
-            foreach (var row in await Store.WritesAsync())
+            while (true)
             {
+                var row = (await Store.WritesAsync()).FirstOrDefault();
+                if (row == null) break;
                 Guard(started);
                 if (row.AccountId != account || row.Status != "pending") break;
                 try
@@ -158,7 +162,7 @@ public sealed class ClientRepository : IDisposable
                         new JsonObject { ["method"] = row.Method, ["tail"] = tail, ["body"] = JsonNode.Parse(row.Body) }, row.Id, ct); Guard(started);
                     writeResults[row.Id] = data?.DeepClone();
                     if (writeResults.Count > 128) writeResults.Clear();
-                    await Store.CompleteWriteAsync(row.Id);
+                    await Store.ConfirmWriteAsync(row, data);
                     StatusChanged?.Invoke("服务端已提交");
                 }
                 catch (ApiException ex)
@@ -199,6 +203,7 @@ public sealed class ClientRepository : IDisposable
     }
     private async Task<JsonNode?> NetworkAsync(string method, string path, JsonNode? body, string? idempotencyKey, CancellationToken ct)
     {
+        using var activity = new RequestLease(this);
         var started = epoch;
         using var message = new HttpRequestMessage(new HttpMethod(method), ClientPaths.Normalize(path));
         message.Headers.Add("X-Request-Id", Guid.NewGuid().ToString());
@@ -239,6 +244,12 @@ public sealed class ClientRepository : IDisposable
         return view;
     }
     public void Dispose() { Http.Dispose(); syncing.Dispose(); Store.Dispose(); }
+    private sealed class RequestLease : IDisposable
+    {
+        private ClientRepository? owner;
+        public RequestLease(ClientRepository repository) { owner = repository; Interlocked.Increment(ref repository.activeRequests); }
+        public void Dispose() { var repository = Interlocked.Exchange(ref owner, null); if (repository != null) Interlocked.Decrement(ref repository.activeRequests); }
+    }
     public async Task PrepareProjectAsync(string projectId, CancellationToken ct = default)
     {
         if (!Guid.TryParse(projectId, out _)) throw new ArgumentException("项目标识无效");

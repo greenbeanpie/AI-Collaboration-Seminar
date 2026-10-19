@@ -10,8 +10,8 @@ public static partial class ClientPaths
     public const string Callback = "buwei-windows-native://auth/callback";
     public static string Normalize(string path)
     {
-        var decoded = Uri.UnescapeDataString(path);
-        if (!path.StartsWith('/') || path.StartsWith("//") || decoded.Contains('\\') || decoded.Contains('#') || decoded.Contains("..") || decoded.Any(char.IsControl))
+        var decoded = Uri.UnescapeDataString(path.Split('?', 2)[0]);
+        if (!path.StartsWith('/') || path.StartsWith("//") || path.Contains('#') || path.Any(char.IsControl) || decoded.Contains('\\') || decoded.Contains('#') || decoded.Contains("..") || decoded.Any(char.IsControl))
             throw new ArgumentException("只允许应用内接口路径", nameof(path));
         return path.StartsWith("/api/v1/", StringComparison.Ordinal) ? path : "/api/v1" + path;
     }
