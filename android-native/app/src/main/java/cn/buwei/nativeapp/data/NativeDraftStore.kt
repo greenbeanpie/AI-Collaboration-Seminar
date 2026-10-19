@@ -1,6 +1,10 @@
 package cn.buwei.nativeapp.data
 
 import android.util.AtomicFile
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -61,18 +65,53 @@ class NativeDraftStore(private val repository:ClientRepository) {
     }
 }
 
-/** Persists an explicit user's write identity before transport; never retries automatically. */
-suspend fun ClientRepository.requestDurably(namespace:String,method:String,path:String,body:JsonObject?=null):JsonObject {
+/** In-memory coalescing only. No background scope, retry, or transport outlives its initiating call. */
+private object DurableIntentRequests {
+    data class Identity(val origin:String,val owner:String,val epoch:Long,val namespace:String,val fingerprint:String)
+    class Pending(val result:Deferred<JsonObject>,var waiters:Int=0)
+    val lock=Any()
+    val pending=mutableMapOf<Identity,Pending>()
+}
+
+/** Persists an explicit user's write identity before transport; never retries automatically.
+ * Calls that overlap for this exact backend/account epoch/intent await one transport result.
+ * Failure releases only the in-memory operation; the persisted idempotency key survives for an
+ * explicit retry. Cancelling the initiating caller cancels its child transport, retaining the key.
+ */
+suspend fun ClientRepository.requestDurably(namespace:String,method:String,path:String,body:JsonObject?=null):JsonObject=coroutineScope {
     require(method!="GET"&&method!="HEAD")
     val owner=accountId?:error("请先登录");val generation=epoch
     val payload=(body?:JsonObject(emptyMap())).toString()
     val fingerprint=MessageDigest.getInstance("SHA-256").digest("$method\n${resolvePath(path)}\n$payload".toByteArray()).joinToString(""){"%02x".format(it)}
-    val key="intent:$namespace:$fingerprint";val drafts=NativeDraftStore(this)
-    val saved=drafts.read(key,owner,generation)
-    val idempotency=saved?.get("idempotencyKey")?.jsonPrimitive?.content?:UUID.randomUUID().toString().also {id->
-        drafts.save(key,buildJsonObject {put("idempotencyKey",id);put("createdAt",System.currentTimeMillis());put("method",method);put("path",resolvePath(path))},owner,generation)
+    val identity=DurableIntentRequests.Identity(origin,owner,generation,namespace,fingerprint)
+    val operation=synchronized(DurableIntentRequests.lock) {
+        val current=DurableIntentRequests.pending[identity]
+        if(current!=null)current.also {it.waiters++} else {
+            val deferred=async(start=CoroutineStart.LAZY) {
+                val key="intent:$namespace:$fingerprint";val drafts=NativeDraftStore(this@requestDurably)
+                val saved=drafts.read(key,owner,generation)
+                val idempotency=saved?.get("idempotencyKey")?.jsonPrimitive?.content?:UUID.randomUUID().toString().also {id->
+                    drafts.save(key,buildJsonObject {put("idempotencyKey",id);put("createdAt",System.currentTimeMillis());put("method",method);put("path",resolvePath(path))},owner,generation)
+                }
+                val response=request(method,path,body,idempotency,owner,generation)
+                drafts.remove(key,owner,generation)
+                response
+            }
+            DurableIntentRequests.Pending(deferred,1).also {created->
+                DurableIntentRequests.pending[identity]=created
+                deferred.invokeOnCompletion {
+                    synchronized(DurableIntentRequests.lock) {
+                        if(created.waiters==0 && DurableIntentRequests.pending[identity]===created)DurableIntentRequests.pending.remove(identity)
+                    }
+                }
+            }
+        }
     }
-    val response=request(method,path,body,idempotency,owner,generation)
-    drafts.remove(key,owner,generation)
-    return response
+    try {operation.result.start();val response=operation.result.await();check(accountId==owner&&epoch==generation){"账户已变化，已停止采用操作结果"};response}
+    finally {
+        synchronized(DurableIntentRequests.lock) {
+            operation.waiters--
+            if(operation.waiters==0 && operation.result.isCompleted && DurableIntentRequests.pending[identity]===operation)DurableIntentRequests.pending.remove(identity)
+        }
+    }
 }

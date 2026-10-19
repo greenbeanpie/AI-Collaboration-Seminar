@@ -184,10 +184,22 @@ class ClientRepository(val context:Context,private val testOrigin:String?=null,n
             }
         }
     }
-    suspend fun validateSession():JsonObject {
-        val result=networkJson("GET","/auth/session")["user"]!!.jsonObject
-        check(accountId==null || result["id"]?.jsonPrimitive?.content==accountId) { "账户发生变化，已停止操作" }
-        return result
+    suspend fun validateSession():JsonObject=withContext(Dispatchers.IO) {
+        // A response may arrive after logout or a different native authorization exchange.
+        val snapshot=synchronized(sessionLock) {Triple(accountId,epoch,credential)}
+        val owner=snapshot.first?:error("请先登录")
+        val result=networkJson("GET","/auth/session",expectedOwner=owner,expectedEpoch=snapshot.second)["user"]!!.jsonObject
+        synchronized(sessionLock) {
+            assertOwner(owner,snapshot.second)
+            check(credential==snapshot.third && result["id"]?.jsonPrimitive?.contentOrNull==owner) {"账户发生变化，已停止操作"}
+            if(_account.value!=result) {
+                val cookie=snapshot.third?:error("登录会话不存在")
+                // Commit encrypted metadata before publishing it; retain the existing cookie.
+                secrets.put("session",buildJsonObject {put("cookie",cookie);put("account",result)}.toString())
+                _account.value=result
+            }
+        }
+        result
     }
     private suspend fun sendOperation(row:NativeDatabase.Operation,generation:Long):JsonObject {
         return networkJson("POST","/projects/${row.project}/offline-sync",buildJsonObject { put("method",row.method); put("tail",OfflinePolicy.tail(row.path)); put("body",json.parseToJsonElement(row.body)) },row.id,row.account,generation)
