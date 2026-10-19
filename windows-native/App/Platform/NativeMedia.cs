@@ -163,7 +163,7 @@ public sealed class NativeMedia(string accountDirectory, ActivityGate activity) 
         return file.Path;
     }
     public IReadOnlyList<string> RecoveryFiles() => Directory.Exists(accountDirectory)
-        ? Directory.GetFiles(accountDirectory, "*.recovery.json").Where(p => new FileInfo(p).Length < 64 * 1024).ToArray() : [];
+        ? Directory.GetFiles(accountDirectory, "*.recovery.json") : [];
     private async void OnFailed(MediaCapture sender, MediaCaptureFailedEventArgs args)
     {
         // Do not claim the media container is finalized after device loss.
