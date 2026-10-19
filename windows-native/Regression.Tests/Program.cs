@@ -195,6 +195,25 @@ tests.Add(("explicit PKCE denial clears pending login without exchange", async (
     Equal(count, 0); Equal(f.Secrets.Read("pkce"), null);
 }));
 
+tests.Add(("ordered draft saves retain final caller value and preserve account ownership", async () =>
+{
+    using var f = new Fixture(); await f.Login();
+    var writes = new List<Task>();
+    for (var i = 0; i < 100; i++) writes.Add(f.Store.SaveDraftAsync("typing", new JsonObject { ["text"] = i }));
+    f.Store.SetAccount("account-b");
+    writes.Add(f.Store.SaveDraftAsync("typing", new JsonObject { ["text"] = "other-account" }));
+    await Task.WhenAll(writes);
+    Equal((await f.Store.LoadDraftAsync("typing"))?["text"]?.ToString(), "other-account");
+    f.Store.SetAccount("account-a"); Equal((await f.Store.LoadDraftAsync("typing"))?["text"]?.GetValue<int>(), 99);
+}));
+tests.Add(("fresh submission reads never fall back to cached file versions", async () =>
+{
+    using var f = new Fixture(); await f.Login();
+    await f.Store.SaveSnapshotAsync(TaskPath + "/files?limit=100", new JsonObject { ["items"] = new JsonArray(new JsonObject { ["versionId"] = "stale" }) });
+    f.Handler.Route = _ => throw new HttpRequestException("offline");
+    await Reject(() => f.Repository.GetFreshAsync(TaskPath + "/files?limit=100"));
+    Equal((await f.Repository.GetAsync(TaskPath + "/files?limit=100"))?["items"]?[0]?["versionId"]?.ToString(), "stale");
+}));
 var failed = 0;
 foreach (var (name, run) in tests)
 {
