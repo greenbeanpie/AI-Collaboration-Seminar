@@ -63,6 +63,7 @@ class ChatPendingLifecycleInstrumentedTest {
         compose.onNodeWithText("完成后的新回答").assertIsDisplayed();assertEquals(0,writes.get())
     }
     @Test fun pausedScreenStopsHistoryAndJobPollingAndResumesWhenStarted(){
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("AI 执行",substring=true))
         compose.waitUntil(10000){jobReads.get()>0}
         compose.runOnIdle{lifecycleOwner.lifecycle.currentState=Lifecycle.State.CREATED}
         val history=historyReads.get();val jobs=jobReads.get()
