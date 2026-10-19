@@ -9,6 +9,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import cn.buwei.nativeapp.BuildConfig
 import cn.buwei.nativeapp.data.ClientRepository
@@ -28,17 +30,17 @@ import kotlinx.serialization.json.*
   OutlinedTextField(name,{name=it},label={Text("昵称（1–64字）")},modifier=Modifier.fillMaxWidth());Button({action{require(name.trim().length in 1..64);accountWorkspaceRequest(repository,"PATCH","/api/v1/auth/profile",buildJsonObject{put("displayName",name.trim())},owner,epoch);repository.validateSession();notice="昵称已保存"}},enabled=!busy&&name.isNotBlank()){Text("保存昵称")}
   AccountWorkspacePersonalProfile(repository)
   Text("修改密码",style=MaterialTheme.typography.titleLarge);Text("新密码需12–128位。成功后全部设备退出，请重新登录；密码不会保存到本机草稿。")
-  OutlinedTextField(currentPassword,{currentPassword=it},label={Text("原密码")},visualTransformation=PasswordVisualTransformation(),modifier=Modifier.fillMaxWidth())
-  OutlinedTextField(newPassword,{newPassword=it},label={Text("新密码")},visualTransformation=PasswordVisualTransformation(),modifier=Modifier.fillMaxWidth())
-  OutlinedTextField(repeatPassword,{repeatPassword=it},label={Text("确认新密码")},visualTransformation=PasswordVisualTransformation(),modifier=Modifier.fillMaxWidth())
+  OutlinedTextField(currentPassword,{currentPassword=it},label={Text("原密码")},visualTransformation=PasswordVisualTransformation(),keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Password),modifier=Modifier.fillMaxWidth())
+  OutlinedTextField(newPassword,{newPassword=it},label={Text("新密码")},visualTransformation=PasswordVisualTransformation(),keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Password),modifier=Modifier.fillMaxWidth())
+  OutlinedTextField(repeatPassword,{repeatPassword=it},label={Text("确认新密码")},visualTransformation=PasswordVisualTransformation(),keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Password),modifier=Modifier.fillMaxWidth())
   Button({if(newPassword!=repeatPassword)error="两次新密码不一致"else if(newPassword==currentPassword)error="新密码不能与原密码相同"else confirm="password"},enabled=!busy&&currentPassword.isNotBlank()&&newPassword.length in 12..128&&repeatPassword.isNotBlank()){Text("修改密码")}
   Text("恢复邮箱",style=MaterialTheme.typography.titleLarge);emailStatus?.let{Text("当前邮箱：${it.text("email").ifBlank{"未绑定"}} · "+if(it["verified"]?.jsonPrimitive?.booleanOrNull==true)"已验证"else"尚未验证")}
   Text("新邮箱验证前原恢复邮箱保持有效；验证邮件15分钟有效。")
-  OutlinedTextField(email,{email=it},label={Text("待验证恢复邮箱")},modifier=Modifier.fillMaxWidth());OutlinedTextField(emailPassword,{emailPassword=it},label={Text("当前密码（核实邮箱操作）")},visualTransformation=PasswordVisualTransformation(),modifier=Modifier.fillMaxWidth())
+  OutlinedTextField(email,{email=it},label={Text("待验证恢复邮箱")},modifier=Modifier.fillMaxWidth());OutlinedTextField(emailPassword,{emailPassword=it},label={Text("当前密码（核实邮箱操作）")},visualTransformation=PasswordVisualTransformation(),keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Password),modifier=Modifier.fillMaxWidth())
   val challenge=capabilities?.obj("authentication")?.get("turnstileRequired")?.jsonPrimitive?.booleanOrNull==true
   if(challenge){Text("此环境要求网页人机验证，邮箱验证申请在系统浏览器的账户安全页完成。");OutlinedButton({browser("/app/settings/security")},enabled=!busy){Text("打开系统浏览器验证邮箱")}}else Button({confirm="email"},enabled=!busy&&capabilities!=null&&email.contains('@')&&emailPassword.isNotBlank()){Text("发送验证邮件")}
   if(emailStatus?.text("email")?.isNotBlank()==true)TextButton({confirm="remove-email"},enabled=!busy&&emailPassword.isNotBlank()){Text("用当前密码解绑邮箱")}
-  OutlinedTextField(token,{token=it},label={Text("邮箱验证代码或完整邮件验证链接")},visualTransformation=PasswordVisualTransformation(),modifier=Modifier.fillMaxWidth());Button({confirm="verify"},enabled=!busy&&token.isNotBlank()){Text("验证恢复邮箱")}
+  OutlinedTextField(token,{token=it},label={Text("邮箱验证代码或完整邮件验证链接")},visualTransformation=PasswordVisualTransformation(),keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Password),modifier=Modifier.fillMaxWidth());Button({confirm="verify"},enabled=!busy&&token.isNotBlank()){Text("验证恢复邮箱")}
   TextButton({action{reloadEmail();notice="邮箱状态已刷新"}},enabled=!busy){Text("刷新邮箱验证状态")}
   TextButton({browser("/password-forgot")}){Text("忘记密码：在系统浏览器恢复")}
  }
@@ -51,5 +53,6 @@ import kotlinx.serialization.json.*
   }}finally{currentPassword="";newPassword="";repeatPassword="";emailPassword="";token=""}
  }}){Text("确认")}},dismissButton={TextButton({confirm=null}){Text("返回")}})}
 }
+
 
 

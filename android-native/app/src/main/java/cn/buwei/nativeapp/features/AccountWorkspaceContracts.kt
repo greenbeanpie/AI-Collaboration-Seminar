@@ -13,6 +13,7 @@ internal suspend fun accountWorkspaceRequest(repository:ClientRepository,method:
  repository.execute(method,path,body?.toString()?.toRequestBody("application/json".toMediaType()),headers=mapOf("X-Account-Settings" to "1"),expectedOwner=owner,expectedEpoch=epoch).use{response->
   check(repository.accountId==owner&&repository.epoch==epoch){"账户已变化"}
   val payload=runCatching{repository.json.parseToJsonElement(response.body.string()).jsonObject}.getOrNull()
+  check(repository.accountId==owner&&repository.epoch==epoch){"账户已变化"}
   if(!response.isSuccessful){val error=payload?.get("error")as? JsonObject;throw ApiException(response.code,error?.text("code")?:"HTTP_${response.code}",error?.text("message")?:"请求失败 (${response.code})")}
   payload?.get("data")as? JsonObject?:error("服务返回了无效数据")
  }
@@ -29,4 +30,5 @@ internal fun accountImportFields(profile:JsonObject,candidate:JsonObject,fields:
  next["visibility"]=JsonObject(visibility);if(fields.any{it in listOf("major","specialties")})next["aiUseAllowed"]=JsonPrimitive(false)
  return JsonObject(next)
 }
+
 
