@@ -18,13 +18,13 @@ import java.util.UUID
 internal object CreationDocuments {
  suspend fun stage(context:Context,uri:Uri,owner:String):File=withContext(Dispatchers.IO){
   val name=context.contentResolver.query(uri,arrayOf(OpenableColumns.DISPLAY_NAME),null,null,null)?.use{if(it.moveToFirst())it.getString(0)else null}?:"资料"
-  val dir=File(context.filesDir,"creation-files/$owner").apply{mkdirs()};val file=File(dir,UUID.randomUUID().toString()+"-"+name.replace(Regex("[^\\p{L}\\p{N}._ -]"),"_").take(180));val partial=File(file.path+".partial")
+  val dir=File(context.filesDir,"creation-files/$owner").apply{mkdirs()};val file=File(dir,UUID.randomUUID().toString()+"-"+creationSafeFileName(name));val partial=File(file.path+".partial")
   try{context.contentResolver.openInputStream(uri)!!.use{input->partial.outputStream().use{output->val buffer=ByteArray(65536);var total=0L;while(true){ensureActive();val n=input.read(buffer);if(n<0)break;total+=n;require(total<=512L*1024*1024){"文件超过 512 MiB"};require(dir.usableSpace>64L*1024*1024){"存储空间不足，需保留 64 MiB"};output.write(buffer,0,n)}}};check(partial.renameTo(file)){"无法保存原文件"};file}finally{partial.delete()}
  }
  suspend fun upload(repository:ClientRepository,draft:JsonObject,file:File,progress:(String)->Unit):JsonObject=withContext(Dispatchers.IO){
   val owner=repository.accountId?:error("请先登录");val epoch=repository.epoch
   fun guard(){check(repository.accountId==owner&&repository.epoch==epoch){"账户已变化，已保留原文件"}}
-  guard();val digest=MessageDigest.getInstance("SHA-256");file.inputStream().use{input->val b=ByteArray(65536);while(true){ensureActive();val n=input.read(b);if(n<0)break;digest.update(b,0,n)}}
+  guard();require(file.canonicalFile.parentFile==File(repository.context.filesDir,"creation-files/$owner").canonicalFile){"原件不属于当前账户的创建草稿目录"};val digest=MessageDigest.getInstance("SHA-256");file.inputStream().use{input->val b=ByteArray(65536);while(true){ensureActive();val n=input.read(b);if(n<0)break;digest.update(b,0,n)}}
   val hash=digest.digest().joinToString(""){"%02x".format(it)}
   val dir=File(repository.context.filesDir,"creation-files/$owner").apply{mkdirs()};val manifest=File(dir,"${draft.text("id")}-${hash}-${file.name.drop(37).hashCode()}.upload")
   val fileId=if(manifest.exists())manifest.readText()else UUID.randomUUID().toString().also{manifest.writeText(it)}
@@ -69,4 +69,11 @@ internal fun creationCommitBody(draft:JsonObject):JsonObject{
 }
 
 
+
+
+internal fun creationSafeFileName(name:String):String {
+ val safe=name.replace(Regex("[^\\p{L}\\p{N}._ -]"),"_")
+ val extension=safe.substringAfterLast('.',"").take(12)
+ return if(safe.length<=180)safe else if(extension.isNotBlank())safe.substringBeforeLast('.').take(179-extension.length)+"."+extension else safe.take(180)
+}
 

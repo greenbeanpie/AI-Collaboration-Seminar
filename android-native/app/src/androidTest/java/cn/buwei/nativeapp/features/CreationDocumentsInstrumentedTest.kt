@@ -20,7 +20,7 @@ class CreationDocumentsInstrumentedTest {
   server.enqueue(reply(buildJsonObject{put("user",buildJsonObject{put("id",user);put("displayName","Fixture");put("isAdmin",false);put("role","user")})}).addHeader("Set-Cookie","ai_office_session=fixture"))
   val context=ApplicationProvider.getApplicationContext<android.content.Context>();val repository=ClientRepository(context,server.url("/").toString().trimEnd('/'),"creation-${UUID.randomUUID()}-")
   repository.exchange("test","test");server.takeRequest()
-  val file=File(context.cacheDir,"${UUID.randomUUID()}-notes.txt").apply{writeText("A private draft document.")}
+  val file=File(context.filesDir,"creation-files/$user/${UUID.randomUUID()}-notes.txt").apply{parentFile!!.mkdirs();writeText("A private draft document.")}
   try {
    server.enqueue(reply(buildJsonObject{put("status","uploading");put("partBytes",8388608);put("parts",JsonArray(emptyList()))}))
    server.enqueue(reply(buildJsonObject{put("ok",true)}));server.enqueue(reply(draft(2)));server.enqueue(reply(buildJsonObject{put("accepted",1)}));server.enqueue(reply(draft(3)))
@@ -34,3 +34,4 @@ class CreationDocumentsInstrumentedTest {
   }finally{file.delete();server.shutdown()}
  }
 }
+
