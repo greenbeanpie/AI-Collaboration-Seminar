@@ -28,6 +28,8 @@
 
 打包脚本验证 Runtime 安装器具有有效微软签名，并拒绝发布目录里的 WebView2 文件。当前用户 NSIS 安装器随附共享运行时安装器，应用使用独立版本目录。便携 ZIP 仍需要预装兼容的 Windows App Runtime。
 
+运行时安装器使用[微软固定 2.5.1 x64 下载地址](https://aka.ms/windowsappsdk/2.5/2.5.1/windowsappruntimeinstall-x64.exe)。打包同时检查应用 PRI/XBF 的存在和文件头；资源发布缺失会导致构建产物无法启动，不能只验证编译返回码。
+
 ## 数据与授权
 
 新版数据目录为 %LOCALAPPDATA%/Buwei.Windows.Native/；不会读取旧版的 Cookie、IndexedDB、附件或录制目录。卸载保留该目录；重新授权相同账号后可继续使用本机数据。
