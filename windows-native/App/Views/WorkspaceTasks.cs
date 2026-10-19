@@ -34,14 +34,14 @@ public sealed partial class WorkspaceView
         var effort = Ui.Field("预计投入（小时，0.25–200）", draft?.Text("effortHours") ?? (task.Text("effortHours") is { Length: > 0 } h ? h : "1"), max: 8);
         var due = Ui.Field("截止日期（YYYY-MM-DD，留空未知）", draft?.Text("dueDate") ?? task.Text("dueDate"), max: 10);
         var members = (await repository.GetAsync(Base + "/members?limit=100", token)).Rows();
-        var assignee = Ui.Choice("负责人", new[] { ("", "暂不分配") }.Concat(members.Select(m => (m.Text("userId"), m.Text("displayName")))), task.Text("assigneeId"));
+        var assignee = Ui.Choice("负责人", new[] { ("", "暂不分配") }.Concat(members.Select(m => (m.Text("userId"), m.Text("displayName")))), draft?["assigneeId"]?.ToString() ?? task.Text("assigneeId"));
         var dependencies = new Dictionary<string, CheckBox>(); var dependencyPanel = Ui.Stack(Ui.Label("前置任务"));
         foreach (var row in graph.Rows().Where(x => x.Text("taskId") != task.Text("taskId")))
-        { var box = new CheckBox { Content = row.Text("title"), IsChecked = task.Rows("dependsOnTaskIds").Any(x => x.ToString() == row.Text("taskId")) }; dependencies[row.Text("taskId")] = box; dependencyPanel.Children.Add(box); }
+        { var box = new CheckBox { Content = row.Text("title"), IsChecked = (draft?["dependsOnTaskIds"] != null ? draft : task).Rows("dependsOnTaskIds").Any(x => x.ToString() == row.Text("taskId")) }; dependencies[row.Text("taskId")] = box; dependencyPanel.Children.Add(box); }
         var expectedRevision = draft?["expectedRevision"].Copy() ?? task?["revision"].Copy();
         var expectedGraphRevision = draft?["expectedGraphRevision"].Copy() ?? graph?["graphRevision"].Copy();
-        JsonObject ContentBody() => new() { ["title"] = title.Text.Trim(), ["detail"] = detail.Text.Trim(), ["criteria"] = criteria.Text.Trim(), ["effortHours"] = effort.Text, ["dueDate"] = due.Text, ["expectedRevision"] = expectedRevision.Copy(), ["expectedGraphRevision"] = expectedGraphRevision.Copy() };
-        TrackDraft(key, ContentBody, title, detail, criteria, effort, due);
+        JsonObject ContentBody() => new() { ["title"] = title.Text.Trim(), ["detail"] = detail.Text.Trim(), ["criteria"] = criteria.Text.Trim(), ["effortHours"] = effort.Text, ["dueDate"] = due.Text, ["expectedRevision"] = expectedRevision.Copy(), ["expectedGraphRevision"] = expectedGraphRevision.Copy(), ["assigneeId"] = assignee.Value().Length==0?null:JsonValue.Create(assignee.Value()), ["dependsOnTaskIds"] = new JsonArray(dependencies.Where(x=>x.Value.IsChecked==true).Select(x=>(JsonNode?)JsonValue.Create(x.Key)).ToArray()) };
+        TrackDraft(key, ContentBody, new Control[]{title, detail, criteria, effort, due,assignee}.Concat(dependencies.Values).ToArray());
         panel.Children.Add(Ui.Card(title, detail, criteria, effort, due, Action("暂存到本机", async () => { await repository.Store.SaveDraftAsync(key, ContentBody()); StatusChanged?.Invoke("当前账户的任务草稿已保存。"); })));
         if (task == null) panel.Children.Add(Ui.Card(assignee, dependencyPanel));
         panel.Children.Add(Action(task == null ? "创建任务" : "保存任务内容", async () =>
@@ -49,11 +49,12 @@ public sealed partial class WorkspaceView
             if (title.Text.Trim().Length == 0 || criteria.Text.Trim().Length == 0) throw new InvalidOperationException("请填写任务名称和验收标准。");
             if (!double.TryParse(effort.Text, out var hours) || hours < .25 || hours > 200) throw new InvalidOperationException("预计投入应为 0.25–200 小时。");
             if (due.Text.Length > 0 && !DateOnly.TryParseExact(due.Text, "yyyy-MM-dd", out _)) throw new InvalidOperationException("请填写 YYYY-MM-DD 日期。");
-            var body = ContentBody(); await repository.Store.SaveDraftAsync(key, body.DeepClone()); body["effortHours"] = hours; body["dueDate"] = due.Text.Length == 0 ? null : JsonValue.Create(due.Text); body["duePrecision"] = due.Text.Length == 0 ? "unknown" : "date";
+            var submittedDraft=ContentBody();var body = (JsonObject)submittedDraft.DeepClone(); await repository.Store.SaveDraftAsync(key, submittedDraft); body["effortHours"] = hours; body["dueDate"] = due.Text.Length == 0 ? null : JsonValue.Create(due.Text); body["duePrecision"] = due.Text.Length == 0 ? "unknown" : "date";
             if (task == null) { body.Remove("expectedRevision"); body["assigneeId"] = assignee.Value().Length == 0 ? null : JsonValue.Create(assignee.Value()); body["dependsOnTaskIds"] = new JsonArray(dependencies.Where(x => x.Value.IsChecked == true).Select(x => (JsonNode?)JsonValue.Create(x.Key)).ToArray()); }
-            else body.Remove("expectedGraphRevision");
+            else {body.Remove("expectedGraphRevision");body.Remove("assigneeId");body.Remove("dependsOnTaskIds");}
             var result = await WriteAsync(task == null ? "POST" : "PATCH", Base + "/tasks" + (task == null ? "" : "/" + Escape(task.Text("taskId"))), body, true);
             if (result.Flag("queued") || result.Flag("offlinePending")) { StatusChanged?.Invoke("任务修改已保存到本机等待同步；服务端状态尚未更新。"); return; }
+            if(!JsonNode.DeepEquals(ContentBody(),submittedDraft)){await repository.Store.SaveDraftAsync(key,ContentBody());StatusChanged?.Invoke("提交成功；提交期间继续输入的编辑已保留为本机草稿，请刷新后核对版本。");return;}
             await repository.Store.DeleteDraftAsync(key);
             await NavigateAsync("tasks");
         }, primary: true));
@@ -81,13 +82,14 @@ public sealed partial class WorkspaceView
             var text = Ui.Field("本轮成果说明", draft.Text("body"), true, 12000);
             var submissionRevision = draft?["expectedRevision"].Copy() ?? task?["revision"].Copy();
             TrackDraft(key, () => new JsonObject { ["body"] = text.Text, ["expectedRevision"] = submissionRevision.Copy() }, text);
-            panel.Children.Add(Ui.Card(text, Action("暂存成果说明", () => repository.Store.SaveDraftAsync(key, new JsonObject { ["body"] = text.Text, ["expectedRevision"] = task?["revision"].Copy() })), Action("提交本轮成果", async () =>
+            panel.Children.Add(Ui.Card(text, Action("暂存成果说明", () => repository.Store.SaveDraftAsync(key, new JsonObject { ["body"] = text.Text, ["expectedRevision"] = submissionRevision.Copy() })), Action("提交本轮成果", async () =>
             {
                 if (string.IsNullOrWhiteSpace(text.Text)) throw new InvalidOperationException("请输入成果说明。");
-                await repository.Store.SaveDraftAsync(key, new JsonObject { ["body"] = text.Text, ["expectedRevision"] = task?["revision"].Copy() });
+                var submittedText=text.Text;await repository.Store.SaveDraftAsync(key, new JsonObject { ["body"] = submittedText, ["expectedRevision"] = submissionRevision.Copy() });
                 var latestFiles = (await repository.GetAsync(path + "/files?limit=100", PageToken)).Rows().Where(f => f.Text("archivedAt").Length == 0 && f.Text("materialArchivedAt").Length == 0 && f.Text("deletedAt").Length == 0).ToList();
                 if (latestFiles.Count > 10) throw new InvalidOperationException("当前成果文件超过 10 个，请先归档不参与本轮的文件。");
                 await WriteAsync("POST", path + "/submissions", new JsonObject { ["expectedRevision"] = submissionRevision.Copy(), ["body"] = text.Text.Trim(), ["materialVersionIds"] = new JsonArray(latestFiles.Select(x => x["versionId"].Copy()).ToArray()) });
+                if(text.Text!=submittedText){await repository.Store.SaveDraftAsync(key,new JsonObject{["body"]=text.Text,["expectedRevision"]=submissionRevision.Copy()});StatusChanged?.Invoke("成果已提交；继续输入的内容仍保留为本机草稿。");return;}
                 await repository.Store.DeleteDraftAsync(key); await ReplaceAsync(ct => TaskDetailAsync(id, ct));
             }, "将固定当前文件版本并提交成果。项目启用 AI 时可能自动触发评价。", true)));
         }

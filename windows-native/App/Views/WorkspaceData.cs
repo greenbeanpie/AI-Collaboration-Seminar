@@ -83,6 +83,7 @@ public sealed partial class WorkspaceView
                     var doc = editor.Document; await repository.Store.SaveDraftAsync(key, new JsonObject { ["doc"] = doc.DeepClone(), ["revision"] = expected.Copy() });
                     var result = await WriteAsync("PUT", path, new JsonObject { ["expectedRevision"] = expected.Copy(), ["doc"] = doc, ["attachmentIds"] = new JsonArray(version.Rows("attachments").Select(x => x["fileId"].Copy()).ToArray()) }, true);
                     if (result.Flag("queued") || result.Flag("offlinePending")) { StatusChanged?.Invoke("正文已保存到本机等待同步；服务端版本未更新。"); return; }
+                    if(!JsonNode.DeepEquals(editor.Document,doc)){await repository.Store.SaveDraftAsync(key,new JsonObject{["doc"]=editor.Document,["revision"]=expected.Copy()});StatusChanged?.Invoke("正文已保存；保存期间继续输入的内容保留为本机草稿，请核对新版本后继续。");return;}
                     await repository.Store.DeleteDraftAsync(key); draftDirty = false; saveCurrentDraft = null; await ReplaceAsync(ct => ResourceAsync(type, id, ct));
                 }, primary: true));
             }
