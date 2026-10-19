@@ -25,6 +25,8 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import java.util.UUID
+import java.io.File
+import android.graphics.Bitmap
 import java.util.concurrent.atomic.AtomicReference
 
 /** Exercise the dedicated data page, rather than only the generic JSON renderer. */
@@ -55,6 +57,7 @@ class DataDocumentParityInstrumentedTest {
     "$base/materials/$material/versions"->response(buildJsonObject{put("items",buildJsonArray{if(formatComparison)add(version(current,2,"Current canonical"));add(version(historic,1,"Historic canonical"))});put("nextCursor",JsonNull)})
     "$base/materials/$material/versions/$current"->response(version(current,2,"Current canonical"))
     "$base/materials/$material/versions/$historic"->response(version(historic,1,"Historic canonical"))
+    "$base/comments"->response(buildJsonObject{put("items",buildJsonArray{});put("nextCursor",JsonNull)})
     else->MockResponse().setResponseCode(404).setBody("Unexpected loopback request $path")
    }
   }};server.start()
@@ -63,19 +66,24 @@ class DataDocumentParityInstrumentedTest {
  }
  @After fun teardown(){server.shutdown()}
  private fun await(text:String){compose.waitUntil(15000){compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()}}
+ private fun capture(name:String){
+  val context=InstrumentationRegistry.getInstrumentation().targetContext
+  val bitmap=requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
+  try{File(context.getExternalFilesDir(null),"data-parity-$name.png").outputStream().use{check(bitmap.compress(Bitmap.CompressFormat.PNG,100,it))}}finally{bitmap.recycle()}
+ }
  private fun clickLink(){val node=compose.onNodeWithText("Account（/app/profile）");node.performScrollTo();val layouts=mutableListOf<TextLayoutResult>();node.performSemanticsAction(SemanticsActions.GetTextLayoutResult){assertTrue(it(layouts))};node.performTouchInput{click(layouts.single().getBoundingBox(0).center)};compose.runOnIdle{assertEquals("/app/profile",destination.get())}}
  @Test fun currentMaterialUsesCanonicalTableAndMarksAndNativeLink(){
   compose.setContent{NativeTheme{Surface{CompositionLocalProvider(LocalNativeContentNavigation provides {destination.set(it)}){DataWorkspace(repository,project,NativeDestination("data",project,material,"material"))}}}}
   await("Current canonical")
   val text=compose.onNodeWithText("Current canonical").fetchSemanticsNode().config[SemanticsProperties.Text].single()
   assertTrue(text.spanStyles.any{it.item.textDecoration==TextDecoration.Underline})
-  compose.onNodeWithText("Current canonical table").performScrollTo().assertIsDisplayed()
+  compose.onNodeWithText("Current canonical table").performScrollTo().assertIsDisplayed();capture("current")
   compose.onNodeWithText("lossy markdown 2").assertDoesNotExist();clickLink()
  }
  @Test fun historicVersionUsesItsOwnCanonicalDocumentAndNativeLink(){
   compose.setContent{NativeTheme{Surface{CompositionLocalProvider(LocalNativeContentNavigation provides {destination.set(it)}){Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())){DataWorkspaceVersions(repository,project,buildJsonObject{put("materialId",material)})}}}}}
   compose.onNodeWithText("历史版本与比较").performClick();await("Historic canonical")
-  compose.onNodeWithText("Historic canonical table").performScrollTo().assertIsDisplayed()
+  compose.onNodeWithText("Historic canonical table").performScrollTo().assertIsDisplayed();capture("historic")
   compose.onNodeWithText("Current canonical").assertDoesNotExist();compose.onNodeWithText("lossy markdown 1").assertDoesNotExist();clickLink()
  }
  @Test fun historicComparisonAnnouncesRichFormattingChangesWhenMarkdownMatches(){
