@@ -83,6 +83,8 @@ public sealed class NativeVoice(ClientRepository repository, string projectId, s
             receiving = ReceiveAsync(ct);
             _ = WatchdogAsync(ct);
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        { await ReleaseAsync(); }
         catch (Exception error) when (error is not OperationCanceledException || !ct.IsCancellationRequested)
         { await FailAsync(error.Message); }
     }
