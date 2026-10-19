@@ -97,9 +97,9 @@ private fun RehearsalWorkspaceContent(repository: ClientRepository, projectId: S
                 TextButton({ val id = selected; confirm = "取消并删除本场演练？本场问答及未完成评分不会保存，取消后无法恢复。" to { send("DELETE", "/rehearsals/${Uri.encode(id)}"); selected = ""; detail = null; answer = ""; jobId = "" } }, enabled = !busy) { Text("取消并删除本场演练") }
             } else if (current.text("status") == "active") Text("仅本轮有操作权限的答辩成员可回答或结束。")
             RehearsalAssessmentResult(repository, projectId, selected, refresh, project.text("myRole") == "owner" || project.obj("permissions").flag("scoreCorrect"), onChanged = { refresh++ }, onConfirm = { message, block -> confirm = message to block })
-            val visibleJob = jobId.ifBlank { current.text("processingJobId").ifBlank { current.text("aiJobId") } }; if (visibleJob.isNotBlank()) NativeJobExecution(repository, visibleJob, onSettled = { refresh++ })
+            val visibleJob = jobId.ifBlank { current.text("processingJobId").ifBlank { current.text("aiJobId") } }; if (visibleJob.isNotBlank()) NativeJobExecution(repository, visibleJob, allowResume = aiEnabled && active, onResumed = { jobId = it }, onSettled = { refresh++ })
         }
-        if (detail == null && jobId.isNotBlank()) NativeJobExecution(repository, jobId, onSettled = { refresh++ })
+        if (detail == null && jobId.isNotBlank()) NativeJobExecution(repository, jobId, allowResume = aiEnabled, onResumed = { jobId = it }, onSettled = { refresh++ })
     }
     confirm?.let { (message, block) -> AlertDialog(onDismissRequest = { confirm = null }, title = { Text("确认演练操作") }, text = { Text(message) }, confirmButton = { TextButton({ confirm = null; action(block) }) { Text("确认") } }, dismissButton = { TextButton({ confirm = null }) { Text("取消") } }) }
 }
