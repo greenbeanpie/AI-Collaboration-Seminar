@@ -88,6 +88,7 @@ fun NativeJobExecution(repository:ClientRepository,jobId:String,allowResume:Bool
  Card(Modifier.fillMaxWidth()){Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
   Text("AI 执行 · ${job?.text("status").orEmpty()}",style=MaterialTheme.typography.titleMedium)
   job?.let{current->val activity=current.obj("activity");Text(activity.text("code"));activityProgress(activity)?.let{Text(it)};val execution=current.obj("execution");Text("模型请求累计 ${execution.text("totalCalls").ifBlank{"未知"}} 次",style=MaterialTheme.typography.bodySmall);if(activity.flag("uncertain"))Text("供应商请求结果不明确，请核对后再继续。",color=MaterialTheme.colorScheme.error);current.text("error").takeIf{it.isNotBlank()}?.let{Text(it)}
+   NativeJobFeedbackSnapshot(current)
    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
     if(nativeJobCanResume(current,allowResume))OutlinedButton({action="retry"},enabled=!busy){Text("恢复失败执行")}
     if(execution.flag("canContinue"))OutlinedButton({action="continue"},enabled=!busy){Text("继续")}
