@@ -97,6 +97,8 @@ public sealed partial class WorkspaceView : UserControl
         {
             if (repository.AccountId == null) { Show(Ui.Stack(Ui.Heading("欢迎使用补位"), Ui.Label("请先使用窗口顶部的登录按钮授权此客户端。")), token); return; }
             if (route.StartsWith("/app/")) route = route[5..];
+            if (route is "/app" or "app" or "") route = "projects";
+            route = route switch { "profile" or "profile/settings" => "account", "profile/settings/notifications" => "notifications", "profile/settings/security" => "account", "profile/settings/personal-profile" => "personal-profile", _ => route };
             if (route.StartsWith("projects/"))
             {
                 var parts = route.Split('/');
@@ -114,7 +116,7 @@ public sealed partial class WorkspaceView : UserControl
                 "data" or "materials" or "sources" => await DataAsync(token), "team" => await TeamAsync(token),
                 "assessment" or "assessments" or "reviews" => await AssessmentAsync(token), "ai" or "ai-chat" => await AiAsync(token),
                 "activity" or "ledger" => await ActivityAsync(token), "project-settings" => await ProjectSettingsAsync(token),
-                "account" or "settings" => await AccountAsync(token), "notifications" => await NotificationsAsync(token),
+                "account" or "settings" => await AccountAsync(token), "personal-profile" => await PersonalProfileAsync(token), "notifications" => await NotificationsAsync(token),
                 "support" or "help" => await SupportAsync(token), "bridge" or "agent-bridges" => await BridgeAsync(token),
                 "admin" => await AdminAsync(token), _ => Ui.Stack(Ui.Heading("暂不支持此入口"), Ui.Label("请从侧栏选择当前原生客户端已提供的页面。"))
             };

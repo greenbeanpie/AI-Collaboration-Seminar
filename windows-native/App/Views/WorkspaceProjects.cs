@@ -45,6 +45,7 @@ public sealed partial class WorkspaceView
     private async Task<UIElement> CreateProjectAsync(CancellationToken token)
     {
         var panel = Page("新建项目", "先保存项目草稿，再预览并确认创建。模板内容与服务端默认设置保持兼容。");
+        panel.Children.Add(Action("项目创建向导（AI 规划、团队与资料）", () => ReplaceAsync(AdvancedCreationAsync)));
         var key = "project-create";
         var restored = await repository.Store.LoadDraftAsync(key);
         var draftId = restored.Text("draftId");
@@ -56,6 +57,7 @@ public sealed partial class WorkspaceView
         var goalDetail = Ui.Field("目标说明", payload?["goal"].Text("detail"), true);
         var due = Ui.Field("截止日期（YYYY-MM-DD，可留空）", payload.Text("deadlineDate"), max: 10);
         var status = Ui.Label(draft == null ? "尚未创建服务端草稿" : "服务端草稿已恢复 · 版本 " + draft.Text("revision"));
+        TrackDraft(key, () => new JsonObject { ["draftId"] = draftId, ["name"] = name.Text, ["description"] = description.Text, ["goalTitle"] = goal.Text, ["goalDetail"] = goalDetail.Text, ["deadlineDate"] = due.Text }, name, description, goal, goalDetail, due);
         panel.Children.Add(Ui.Card(name, description, goal, goalDetail, due, status));
         panel.Children.Add(Action("保存本机草稿", async () => { await repository.Store.SaveDraftAsync(key, new JsonObject { ["draftId"] = draftId, ["name"] = name.Text, ["description"] = description.Text }); StatusChanged?.Invoke("本机草稿已保存。"); }));
         var preview = Ui.Stack(); panel.Children.Add(preview);

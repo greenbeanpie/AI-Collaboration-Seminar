@@ -75,13 +75,15 @@ public sealed partial class WorkspaceView
         {
             var key = "submission:" + projectId + ":" + id; var draft = await repository.Store.LoadDraftAsync(key);
             var text = Ui.Field("本轮成果说明", draft.Text("body"), true, 12000);
+            var submissionRevision = draft?["expectedRevision"].Copy() ?? task?["revision"].Copy();
+            TrackDraft(key, () => new JsonObject { ["body"] = text.Text, ["expectedRevision"] = submissionRevision.Copy() }, text);
             panel.Children.Add(Ui.Card(text, Action("暂存成果说明", () => repository.Store.SaveDraftAsync(key, new JsonObject { ["body"] = text.Text, ["expectedRevision"] = task?["revision"].Copy() })), Action("提交本轮成果", async () =>
             {
                 if (string.IsNullOrWhiteSpace(text.Text)) throw new InvalidOperationException("请输入成果说明。");
                 await repository.Store.SaveDraftAsync(key, new JsonObject { ["body"] = text.Text, ["expectedRevision"] = task?["revision"].Copy() });
                 var latestFiles = (await repository.GetAsync(path + "/files?limit=100", PageToken)).Rows().Where(f => f.Text("archivedAt").Length == 0 && f.Text("materialArchivedAt").Length == 0 && f.Text("deletedAt").Length == 0).ToList();
                 if (latestFiles.Count > 10) throw new InvalidOperationException("当前成果文件超过 10 个，请先归档不参与本轮的文件。");
-                await WriteAsync("POST", path + "/submissions", new JsonObject { ["expectedRevision"] = task?["revision"].Copy(), ["body"] = text.Text.Trim(), ["materialVersionIds"] = new JsonArray(latestFiles.Select(x => x["versionId"].Copy()).ToArray()) });
+                await WriteAsync("POST", path + "/submissions", new JsonObject { ["expectedRevision"] = submissionRevision.Copy(), ["body"] = text.Text.Trim(), ["materialVersionIds"] = new JsonArray(latestFiles.Select(x => x["versionId"].Copy()).ToArray()) });
                 await repository.Store.DeleteDraftAsync(key); await ReplaceAsync(ct => TaskDetailAsync(id, ct));
             }, "将固定当前文件版本并提交成果。项目启用 AI 时可能自动触发评价。", true)));
         }

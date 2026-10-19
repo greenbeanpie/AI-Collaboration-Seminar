@@ -12,6 +12,7 @@ public sealed partial class WorkspaceView
         var panel = Page("项目 AI", "对话可引用当前项目资料；AI 提供的建议需要人工核对。发送操作可能调用已配置模型并产生费用。");
         var key = "chat:" + projectId; var draft = await repository.Store.LoadDraftAsync(key);
         var composer = Ui.Field("询问项目 AI", draft.Text("content"), true, 8000);
+        TrackDraft(key, () => new JsonObject { ["content"] = composer.Text }, composer);
         var send = Action("发送问题", async () =>
         {
             if (composer.Text.Trim().Length == 0) return;
