@@ -49,7 +49,7 @@ adb -s emulator-5556 shell am instrument -w -r cn.buwei.mobile.nativepreview.deb
 
 ## 配套服务与配置
 
-后端包含 `0079_native_auth.sql`、`0080_native_push.sql` 增量迁移、PKCE 授权和设备通知接口，Web 端包含受保护的浏览器授权确认页。S256 verifier 与一次性授权码换取独立会话，不从 WebView 导出 Cookie。生产使用前需按正常发布流程备份、应用迁移并部署配套服务；本轮本地迁移与测试不代表这些服务已经部署。旧服务缺少新增接口时，预览版登录会失败。
+后端包含 `0079_native_auth.sql`、`0080_native_push.sql` 增量迁移、PKCE 授权和设备通知接口，Web 端包含受保护的浏览器授权确认页。S256 verifier 与一次性授权码换取独立会话，不从 WebView 导出 Cookie。2026-10-19 经用户授权，生产已备份、应用 0078–0080 并部署配套服务；新增路由已上线。线上自动验收停在需人工完成的 Turnstile，尚未完成真实授权码交换与 Android 回调，详见验证报告。
 
 FCM 公共客户端参数通过 Gradle 属性 `firebaseAppId`、`firebaseApiKey`、`firebaseProjectId`、`firebaseSenderId` 提供。服务端仅在配置 `FCM_PROJECT_ID`、`FCM_CLIENT_EMAIL`、`FCM_PRIVATE_KEY` 后发送；私钥只属于服务端 secret，绝不放入 APK。缺少配置时显示降级状态，不承诺即时推送。
 
@@ -57,7 +57,7 @@ FCM 公共客户端参数通过 Gradle 属性 `firebaseAppId`、`firebaseApiKey`
 
 ## 验收边界
 
-专用原生页面已接入现有后端接口，但真实生产授权、部署、FCM 投递、付费模型、实时语音、四小时物理设备录制与可比 Release 业务负载仍需独立验收。手机、平板、厂商后台限制、外设切换、无障碍及长文性能也应按 [验收清单](docs/ACCEPTANCE.md) 记录实际结果，不能用接口数量或模拟数据代替。
+专用原生页面已接入现有后端接口，配套服务已部署；真实生产授权、FCM 投递、付费模型、实时语音、四小时物理设备录制与可比 Release 业务负载仍需独立验收。手机、平板、厂商后台限制、外设切换、无障碍及长文性能也应按 [验收清单](docs/ACCEPTANCE.md) 记录实际结果，不能用接口数量或模拟数据代替。
 
 PDFBox 的可选旧 JPEG2000 解码器未打包，图片渲染使用系统 PdfRenderer。BouncyCastle 中未使用的 EST 辅助类会触发依赖 Lint 告警；Release 配置使用 `-checkdiscard` 要求移除整个 EST 包，未放宽应用 TLS 校验。Baseline Profile 插件仍有 Gradle 弃用提示。
 
