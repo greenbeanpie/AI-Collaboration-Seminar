@@ -1,0 +1,11 @@
+package cn.buwei.nativeapp.features
+
+import kotlinx.serialization.json.*
+import org.junit.Assert.*
+import org.junit.Test
+
+class AccountWorkspaceContractTest {
+ @Test fun profileSaveSendsExpectedRevisionWithoutReadOnlyMetadata(){val profile=Json.parseToJsonElement("""{"revision":4,"bio":"About","major":"Math","specialties":"Research","preferredRoles":"Lead","weeklyAvailableHours":5,"searchable":true,"aiUseAllowed":false,"visibility":{"bio":false,"major":true,"specialties":false,"preferredRoles":true},"readOnlyExtra":"retained locally"}""").jsonObject;val body=accountPersonalBody(profile);assertEquals(4,body["expectedRevision"]!!.jsonPrimitive.int);assertFalse(body.containsKey("revision"));assertFalse(body.containsKey("readOnlyExtra"));assertEquals(profile["visibility"],body["visibility"])}
+ @Test fun importingPrivateLegacyFieldsClosesVisibilityAndAiPermission(){val profile=Json.parseToJsonElement("""{"bio":"Preserve bio","major":"Old major","specialties":"Old skills","preferredRoles":"Owner","weeklyAvailableHours":2,"aiUseAllowed":true,"visibility":{"bio":true,"major":true,"specialties":true,"preferredRoles":true}}""").jsonObject;val candidate=Json.parseToJsonElement("""{"major":"New major","skills":["Skill A","Skill B"],"weeklyAvailableHours":8}""").jsonObject;val result=accountImportFields(profile,candidate,setOf("major","specialties"));assertEquals("Preserve bio",result.text("bio"));assertEquals("New major",result.text("major"));assertEquals("Skill A、Skill B",result.text("specialties"));assertFalse(result["aiUseAllowed"]!!.jsonPrimitive.boolean);assertFalse(result.obj("visibility")["major"]!!.jsonPrimitive.boolean);assertFalse(result.obj("visibility")["specialties"]!!.jsonPrimitive.boolean);assertTrue(result.obj("visibility")["bio"]!!.jsonPrimitive.boolean);assertEquals(2,result["weeklyAvailableHours"]!!.jsonPrimitive.int)}
+ @Test fun hoursOnlyImportDoesNotChangeTextPrivacy(){val profile=Json.parseToJsonElement("""{"aiUseAllowed":true,"visibility":{"bio":true,"major":true,"specialties":true,"preferredRoles":true}}""").jsonObject;val result=accountImportFields(profile,buildJsonObject{put("weeklyAvailableHours",12)},setOf("weeklyAvailableHours"));assertTrue(result["aiUseAllowed"]!!.jsonPrimitive.boolean);assertEquals(profile["visibility"],result["visibility"])}
+}
