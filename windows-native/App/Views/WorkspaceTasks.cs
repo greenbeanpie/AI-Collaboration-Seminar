@@ -41,6 +41,7 @@ public sealed partial class WorkspaceView
         var expectedRevision = draft?["expectedRevision"].Copy() ?? task?["revision"].Copy();
         var expectedGraphRevision = draft?["expectedGraphRevision"].Copy() ?? graph?["graphRevision"].Copy();
         JsonObject ContentBody() => new() { ["title"] = title.Text.Trim(), ["detail"] = detail.Text.Trim(), ["criteria"] = criteria.Text.Trim(), ["effortHours"] = effort.Text, ["dueDate"] = due.Text, ["expectedRevision"] = expectedRevision.Copy(), ["expectedGraphRevision"] = expectedGraphRevision.Copy() };
+        TrackDraft(key, ContentBody, title, detail, criteria, effort, due);
         panel.Children.Add(Ui.Card(title, detail, criteria, effort, due, Action("暂存到本机", async () => { await repository.Store.SaveDraftAsync(key, ContentBody()); StatusChanged?.Invoke("当前账户的任务草稿已保存。"); })));
         if (task == null) panel.Children.Add(Ui.Card(assignee, dependencyPanel));
         panel.Children.Add(Action(task == null ? "创建任务" : "保存任务内容", async () =>

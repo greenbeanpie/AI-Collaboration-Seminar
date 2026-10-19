@@ -50,7 +50,7 @@ public sealed partial class WorkspaceView
         var draftId = restored.Text("draftId");
         JsonNode? draft = draftId.Length > 0 ? await repository.GetAsync("/creation-drafts/" + Escape(draftId), token) : null;
         var payload = draft?["payload"]?.DeepClone() as JsonObject;
-        var name = Ui.Field("项目名称", restored.Text("name") is { Length: > 0 } n ? n : payload.Text("name"), max: 200);
+        var name = Ui.Field("项目名称", restored.Text("name") is { Length: > 0 } n ? n : payload.Text("name"), max: 100);
         var description = Ui.Field("项目说明", restored.Text("description") is { Length: > 0 } d ? d : payload.Text("description"), true, 2000);
         var goal = Ui.Field("主目标", payload?["goal"].Text("title"), max: 200);
         var goalDetail = Ui.Field("目标说明", payload?["goal"].Text("detail"), true);
@@ -68,7 +68,7 @@ public sealed partial class WorkspaceView
             payload = draft?["payload"]?.DeepClone() as JsonObject ?? throw new InvalidOperationException("草稿缺少项目内容，请刷新。");
             payload["name"] = name.Text.Trim(); payload["description"] = description.Text.Trim();
             payload["goal"] = new JsonObject { ["title"] = string.IsNullOrWhiteSpace(goal.Text) ? name.Text.Trim() : goal.Text.Trim(), ["detail"] = goalDetail.Text.Trim() };
-            payload["deadlineDate"] = due.Text.Length == 0 ? null : JsonValue.Create(due.Text); payload["deadlinePrecision"] = due.Text.Length == 0 ? "unknown" : "date";
+            if (due.Text.Length > 0) payload["deadlineDate"] = due.Text; else payload.Remove("deadlineDate");
             draft = await WriteAsync("PATCH", "/creation-drafts/" + Escape(draftId), new JsonObject { ["expectedRevision"] = draft?["revision"].Copy(), ["payload"] = payload.DeepClone() });
             draft = await WriteAsync("POST", "/creation-drafts/" + Escape(draftId) + "/preview", new JsonObject { ["expectedRevision"] = draft?["revision"].Copy(), ["mode"] = "manual", ["goal"] = payload["goal"].Copy(), ["tasks"] = new JsonArray(), ["regenerate"] = true });
             preview.Children.Clear(); preview.Children.Add(Ui.Card(Ui.Label("创建前核对", 20), Ui.Label(name.Text), Ui.Label(goal.Text), Ui.Label(description.Text), Ui.Label("此项目初始任务为空；创建后可在任务协作中添加。"),

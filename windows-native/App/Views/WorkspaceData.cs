@@ -33,6 +33,7 @@ public sealed partial class WorkspaceView
         void Update() { body.Visibility = method.Value() == "paste" ? Visibility.Visible : Visibility.Collapsed; url.Visibility = method.Value() == "web" ? Visibility.Visible : Visibility.Collapsed; }
         method.SelectionChanged += (_, _) => Update(); Update();
         JsonObject Draft() => new() { ["method"] = method.Value(), ["title"] = title.Text, ["text"] = body.Text, ["url"] = url.Text, ["purpose"] = purpose.Value() };
+        TrackDraft(key, Draft, method, title, body, url, purpose);
         panel.Children.Add(Ui.Card(method, title, purpose, body, url, Action("暂存到本机", () => repository.Store.SaveDraftAsync(key, Draft())), Action("确认新增", async () =>
         {
             await repository.Store.SaveDraftAsync(key, Draft());
@@ -59,6 +60,8 @@ public sealed partial class WorkspaceView
             var editorHost = Ui.Stack(editor);
             var expected = material?["revision"].Copy();
             var key = "material:" + projectId + ":" + id; var saved = await repository.Store.LoadDraftAsync(key);
+            editor.Changed += doc => { draftDirty = true; var pending = repository.Store.SaveDraftAsync(key, new JsonObject { ["doc"] = doc, ["revision"] = expected.Copy() }); draftWrites.Add(pending); };
+            saveCurrentDraft = () => repository.Store.SaveDraftAsync(key, new JsonObject { ["doc"] = editor.Document, ["revision"] = expected.Copy() });
             if (saved?["doc"] != null && material.Flag("canEdit")) panel.Children.Add(Action("恢复本机正文草稿", () => { editor = new RichDocumentEditor(saved["doc"]); expected = saved["revision"].Copy(); editorHost.Children.Clear(); editorHost.Children.Add(editor); StatusChanged?.Invoke("已恢复基于版本 " + saved.Text("revision") + " 的本机草稿；保存时仍核对此版本。"); return Task.CompletedTask; }));
             panel.Children.Add(editorHost);
             foreach (var file in version.Rows("attachments")) { panel.Children.Add(Ui.Label(file.Text("name"))); if (OpenAttachmentRequested != null && file.Text("availability") != "unavailable") panel.Children.Add(Action("打开附件", () => OpenAttachmentRequested(projectId!, file.Text("fileId")))); }

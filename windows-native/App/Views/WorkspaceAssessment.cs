@@ -75,6 +75,11 @@ public sealed partial class WorkspaceView
         foreach (var score in report.Rows("scores"))
         {
             var block = Ui.Stack(Ui.Label(score.Text("label") + " · " + score.Text("score"), 18), Ui.Label(score.Text("comment")));
+            if (double.TryParse(score.Text("score"), out var value) && double.IsFinite(value))
+            {
+                var bar = new ProgressBar { Minimum = 0, Maximum = 100, Value = Math.Clamp(value, 0, 100), Height = 10 };
+                Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(bar, score.Text("label") + "，得分 " + score.Text("score") + "，满分 100"); block.Children.Add(bar);
+            }
             foreach (var evidence in score.Rows("evidence")) block.Children.Add(Ui.Label("证据：" + evidence.Text("quote")));
             foreach (var suggestion in score.Rows("suggestions")) block.Children.Add(Ui.Label("建议：" + suggestion));
             panel.Children.Add(Ui.Card(block));

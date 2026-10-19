@@ -18,6 +18,17 @@ public sealed partial class WorkspaceView : UserControl
     private JsonNode? membership;
     private bool active;
     private long accountGeneration;
+    private Func<Task>? saveCurrentDraft;
+    private readonly List<Task> draftWrites = [];
+    private bool draftDirty;
+    private bool sensitiveInput;
+    public bool HasUnsavedChanges => draftDirty || sensitiveInput || draftWrites.Any(x => !x.IsCompletedSuccessfully);
+    public async Task<bool> SaveBeforeCloseAsync()
+    {
+        if (sensitiveInput) return false;
+        try { if (draftDirty && saveCurrentDraft != null) await saveCurrentDraft(); await Task.WhenAll(draftWrites); draftWrites.Clear(); draftDirty = false; return true; }
+        catch (Exception e) { StatusChanged?.Invoke("本机草稿尚未保存：" + e.Message); return false; }
+    }
     private CancellationToken PageToken => pageLifetime.Token;
     private string Base => "/projects/" + Escape(projectId ?? throw new InvalidOperationException("请先选择项目"));
     public event Action<string>? StatusChanged;
@@ -49,7 +60,7 @@ public sealed partial class WorkspaceView : UserControl
     {
         Interlocked.Increment(ref accountGeneration);
         pageLifetime.Cancel();
-        DispatcherQueue.TryEnqueue(() => { projectId = null; project = null; membership = null; surface.Children.Clear(); BuildNavigation(); _ = NavigateAsync("projects"); });
+        DispatcherQueue.TryEnqueue(() => { saveCurrentDraft = null; draftWrites.Clear(); draftDirty = false; sensitiveInput = false; projectId = null; project = null; membership = null; surface.Children.Clear(); BuildNavigation(); _ = NavigateAsync("projects"); });
     }
     private void BuildNavigation()
     {
@@ -74,6 +85,8 @@ public sealed partial class WorkspaceView : UserControl
     }
     public async Task NavigateAsync(string route)
     {
+        if (!await SaveBeforeCloseAsync()) { StatusChanged?.Invoke("请先完成或清空当前敏感输入，或处理本机草稿保存错误后再切换页面。"); return; }
+        saveCurrentDraft = null;
         pageLifetime.Cancel(); pageLifetime.Dispose(); pageLifetime = new CancellationTokenSource();
         var token = PageToken;
         var generation = accountGeneration;
@@ -172,5 +185,30 @@ public sealed partial class WorkspaceView : UserControl
     private async Task OpenProjectAsync(string id)
     { await NavigateAsync("projects/" + Escape(id)); }
     private async Task ReplaceAsync(Func<CancellationToken, Task<UIElement>> render)
-    { var token = PageToken; var content = await render(token); Show(content, token); }
+    { if (!await SaveBeforeCloseAsync()) return; saveCurrentDraft = null; var token = PageToken; var content = await render(token); Show(content, token); }
+    private void TrackDraft(string key, Func<JsonNode> content, params Control[] fields)
+    {
+        var owner = repository.AccountId; var generation = accountGeneration;
+        async Task SaveAsync()
+        {
+            if (owner != repository.AccountId || generation != accountGeneration) return;
+            await repository.Store.SaveDraftAsync(key, content()); draftDirty = false;
+        }
+        var previous = saveCurrentDraft;
+        saveCurrentDraft = async () => { if (previous != null) await previous(); await SaveAsync(); };
+        void Changed()
+        {
+            if (owner != repository.AccountId || generation != accountGeneration) return;
+            draftDirty = true; var pending = SaveAsync(); draftWrites.Add(pending);
+            _ = ObserveAsync(pending);
+        }
+        async Task ObserveAsync(Task pending) { try { await pending; draftWrites.Remove(pending); } catch (Exception error) { StatusChanged?.Invoke("本机草稿尚未保存：" + error.Message); } }
+        foreach (var field in fields)
+        {
+            if (field is TextBox text) text.TextChanged += (_, _) => Changed();
+            if (field is ComboBox combo) combo.SelectionChanged += (_, _) => Changed();
+            if (field is ToggleSwitch toggle) toggle.Toggled += (_, _) => Changed();
+            if (field is CheckBox check) { check.Checked += (_, _) => Changed(); check.Unchecked += (_, _) => Changed(); }
+        }
+    }
 }
