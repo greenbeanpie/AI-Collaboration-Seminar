@@ -65,11 +65,37 @@ public sealed partial class WorkspaceView
         var panel = Page(row.Id("title", "instruction"), Ui.Status(row.Text("status")));
         foreach (var turn in row.Rows("turns"))
         {
-            panel.Children.Add(Ui.Card(Ui.Label(turn.Id("content", "markdown", "message")), Ui.Label(Ui.Status(turn.Text("status")))));
+            var payload = turn["payload"];
+            panel.Children.Add(Ui.Card(Ui.Label(turn.Text("role") == "user" ? "我的输入" : "AI 结果", 18), Ui.Label(payload.Id("content", "question", "answer", "markdown", "summary", "text")), Ui.Label(Ui.Status(turn.Text("status")))));
+            if (turn.Text("kind") == "draft" && turn.Text("runId").Length > 0)
+            {
+                var run = row.Rows("runs").FirstOrDefault(x => x.Text("runId") == turn.Text("runId"));
+                if (payload?["doc"] is JsonObject doc && run.Text("status") == "succeeded")
+                    panel.Children.Add(Action("人工复核并采纳此草稿", () => ReplaceAsync(ct => AdoptDraftAsync(turn.Text("runId"), doc, ct))));
+            }
             if (turn.Text("jobId").Length > 0) panel.Children.Add(Action("查看本轮执行状态", () => ReplaceAsync(ct => JobAsync(turn.Text("jobId"), ct))));
         }
         var answer = Ui.Field("回答 AI 的问题", "", true, 8000);
         panel.Children.Add(Ui.Card(answer, Action("提交本轮回答", async () => { if (string.IsNullOrWhiteSpace(answer.Text)) return; var response = await WriteAsync("POST", Base + "/agent-sessions/" + Escape(id) + "/turns", new JsonObject { ["content"] = answer.Text.Trim() }); if (response.Text("jobId").Length > 0) await ReplaceAsync(ct => JobAsync(response.Text("jobId"), ct)); }, "继续调用模型处理本轮回答？")));
+        return panel;
+    }
+    private async Task<UIElement> AdoptDraftAsync(string runId, JsonObject original, CancellationToken token)
+    {
+        var materials = (await repository.GetAsync(Base + "/materials?limit=100", token)).Rows().Where(x => !x.Flag("systemManaged") && x.Text("kind") != "task-file" && x.Flag("canEdit")).ToList();
+        var panel = Page("人工复核 AI 草稿", "核对正文后保存为已有成果材料的新版本，保留 AI 原草稿及人工修改。");
+        var editor = new RichDocumentEditor(original); var target = Ui.Choice("保存到已有成果材料", materials.Select(x => (x.Text("materialId"), x.Text("title")))); var reviewed = new CheckBox { Content = "我已人工复核，确认可以保存为正式材料新版本" };
+        editor.Changed += _ => reviewed.IsChecked = false; target.SelectionChanged += (_, _) => reviewed.IsChecked = false;
+        var key = "agent-adoption:" + projectId + ":" + runId;
+        panel.Children.Add(Ui.Card(target, editor, reviewed, Action("暂存复核草稿", () => repository.Store.SaveDraftAsync(key, new JsonObject { ["doc"] = editor.Document, ["target"] = target.Value() })), Action("确认复核并采纳", async () =>
+        {
+            if (reviewed.IsChecked != true) throw new InvalidOperationException("请先人工复核并勾选确认。");
+            var selected = materials.FirstOrDefault(x => x.Text("materialId") == target.Value()) ?? throw new InvalidOperationException("请选择目标成果材料。");
+            await repository.Store.SaveDraftAsync(key, new JsonObject { ["doc"] = editor.Document, ["target"] = target.Value(), ["expectedRevision"] = selected["revision"].Copy() });
+            var latest = await repository.GetAsync(Base + "/materials/" + Escape(target.Value()), PageToken);
+            if (latest.Text("revision") != selected.Text("revision")) { reviewed.IsChecked = false; throw new InvalidOperationException("目标材料版本已变化。当前编辑已保留，请刷新并重新核对后采纳。"); }
+            await WriteAsync("POST", Base + "/agent-runs/" + Escape(runId) + "/adopt", new JsonObject { ["materialId"] = target.Value(), ["expectedRevision"] = selected["revision"].Copy(), ["reviewed"] = true, ["doc"] = editor.Document });
+            await repository.Store.DeleteDraftAsync(key); await NavigateAsync("data");
+        }, "保存为正式材料新版本？会校验所选材料版本，保留原草稿和人工修改。", true)));
         return panel;
     }
 }
