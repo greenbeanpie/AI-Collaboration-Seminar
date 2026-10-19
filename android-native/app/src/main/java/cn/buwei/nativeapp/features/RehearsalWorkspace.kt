@@ -10,6 +10,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import cn.buwei.nativeapp.data.ClientRepository
 import cn.buwei.nativeapp.data.requestDurably
+import cn.buwei.nativeapp.NativeAiReferenceBadge
+import cn.buwei.nativeapp.ReferenceFieldLabel
 import cn.buwei.nativeapp.voice.VoiceWorkspace
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -78,19 +80,20 @@ private fun RehearsalWorkspaceContent(repository: ClientRepository, projectId: S
         if(selected.isBlank())linkedAssessment?.let{Text("引用的历史答辩评分",style=MaterialTheme.typography.titleMedium);AssessmentReport(it.obj("report"))}
         Text("围绕固定目标、标准和资料进行真实问答。只有明确确认的创建、回答和结束操作会调用模型。", style = MaterialTheme.typography.bodySmall)
         TextButton({ refresh++ }, enabled = !busy) { Text("刷新演练与历史") }; error?.let { Text(it, color = MaterialTheme.colorScheme.error) }; if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-        AssessmentChoice("演练范围", scope, listOf("all" to "全体答辩", "member" to "指定成员")) { scope = it }
-        if (scope == "member") AssessmentChoice("答辩成员", member, members.map { it.text("userId") to it.text("displayName").ifBlank { it.text("name").ifBlank { it.text("username") } } }) { member = it }
+        AssessmentChoice("演练范围", scope, listOf("all" to "全体答辩", "member" to "指定成员"),aiReference=true) { scope = it }
+        if (scope == "member") AssessmentChoice("答辩成员", member, members.map { it.text("userId") to it.text("displayName").ifBlank { it.text("name").ifBlank { it.text("username") } } },aiReference=true) { member = it }
         AssessmentReferencePicker(repository, projectId, materials, sources) { m, s -> materials = m; sources = s }
         Button({ val body = rehearsalCreation(scope, member, materials, sources); confirm = "开始本轮答辩演练？后端将固定授权资料并调用模型生成第一问。" to { val result = send("POST", "/rehearsals", body); selected = result.text("rehearsalId"); jobId = result.text("jobId"); answer = "" } }, enabled = aiEnabled && !busy && (scope == "all" || member.isNotBlank()) && (project.text("myRole") == "owner" || project.obj("permissions").flag("scoreInitiate"))) { Text("开始新演练") }
         Button({ val body = buildJsonObject { put("kind", "rehearsal"); put("materialVersionIds", JsonArray(materials.sorted().map(::JsonPrimitive))); put("sourceVersionIds", JsonArray(sources.sorted().map(::JsonPrimitive))) }; confirm = "开始带评分的答辩演练？这会固定主目标、统一标准和成果版本，按本轮真实回答生成维度评分。" to { val result = send("POST", "/assessments", body); selected = result.text("rehearsalId"); jobId = result.text("jobId"); answer = "" } }, enabled = aiEnabled && !busy && (project.text("myRole") == "owner" || project.obj("permissions").flag("scoreInitiate"))) { Text("开始带评分的答辩演练") }
         AssessmentChoice("历史演练", selected, history.mapIndexed { index, row -> row.text("rehearsalId") to "${row.text("createdAt")} · ${if (row.text("scope") == "member") "成员演练" else "全体演练"} · ${if (row.text("status") == "finished") "已结束" else "进行中"} · ${index + 1}" }) { selected = it; answer = ""; jobId = "" }
         detail?.let { current ->
             Text(if (current.text("status") == "finished") "本轮已结束" else "本轮正在进行", style = MaterialTheme.typography.titleMedium)
+            NativeAiReferenceBadge()
             current.rows("turns").forEach { turn -> Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = if (turn.text("role") == "user") MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer)) { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text("第 ${turn.text("sequence")} 回合 · ${if (turn.text("role") == "user") "真实回答" else when (turn.text("kind")) { "summary" -> "总结"; "followup" -> "追问"; else -> "问题" }}", style = MaterialTheme.typography.labelLarge); NativeMarkdown(turn.text("content")); turn.rows("references").forEach { reference -> Text(reference.text("title").ifBlank { reference.text("quote") }, style = MaterialTheme.typography.bodySmall) } } } }
             val processing = current.text("processingStatus") in listOf("queued", "running", "waiting_input")
             val active = current.flag("canOperate") && current.text("status") == "active"
             if (active) {
-                OutlinedTextField(answer, { if (it.length <= 8000) answer = it }, Modifier.fillMaxWidth(), label = { Text("本轮真实回答") }, minLines = 3, enabled = aiEnabled && !busy && !processing)
+                OutlinedTextField(answer, { if (it.length <= 8000) answer = it }, Modifier.fillMaxWidth(), label = { ReferenceFieldLabel("本轮真实回答") }, minLines = 3, enabled = aiEnabled && !busy && !processing)
                 Button({ val body = buildJsonObject { put("content", answer.trim()) }; val id = selected; confirm = "提交本轮真实回答？内容将保存并用于后续追问及评分，会调用模型。" to { val result = send("POST", "/rehearsals/${Uri.encode(id)}/answers", body); jobId = result.text("jobId"); answer = "" } }, enabled = aiEnabled && !busy && answer.isNotBlank() && rehearsalCanAnswer(current)) { Text("提交回答") }
                 OutlinedButton({ voiceOpen = true }, enabled = aiEnabled && !busy && !processing) { Text("进入原生实时语音演练") }
                 Button({ val id = selected; confirm = "结束本轮并生成总结评分？将依据本轮固定资料和真实回答调用模型。" to { val result = send("POST", "/rehearsals/${Uri.encode(id)}/finish"); jobId = result.text("jobId") } }, enabled = aiEnabled && !busy && !processing && current.rows("turns").isNotEmpty()) { Text("结束并生成总结") }

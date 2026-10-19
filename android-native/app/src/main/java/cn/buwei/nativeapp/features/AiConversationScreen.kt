@@ -12,6 +12,8 @@ import androidx.compose.ui.unit.dp
 import cn.buwei.nativeapp.data.ClientRepository
 import cn.buwei.nativeapp.data.NativeDraftStore
 import cn.buwei.nativeapp.data.requestDurably
+import cn.buwei.nativeapp.NativeAiReferenceBadge
+import cn.buwei.nativeapp.ReferenceFieldLabel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -39,6 +41,7 @@ fun AiConversationScreen(repository:ClientRepository,projectId:String,onResource
    items(messages,key={it.text("id")}){message->Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=if(message.text("role")=="user")MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer)){
     Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
      Text(if(message.text("role")=="user")"我"else"AI",style=MaterialTheme.typography.labelLarge)
+     NativeAiReferenceBadge()
      NativeMarkdown(message.text("content"),onResource)
      (message["references"]as? JsonArray).orEmpty().forEach{reference->val ref=reference.jsonObject;val href=ref.text("href");val target=cn.buwei.nativeapp.nativeDestination(href);if(target?.projectId==projectId)TextButton({onResource(href)}){Text(ref.text("title"))}else Text(ref.text("title"),style=MaterialTheme.typography.labelSmall)}
      if(message.text("role")=="user") {
@@ -51,7 +54,7 @@ fun AiConversationScreen(repository:ClientRepository,projectId:String,onResource
    }}
    pending?.takeIf{id->messages.none{it.text("role")=="user"&&(resumedJobs[it.text("questionId")]?:it.text("jobId"))==id}}?.let{id->item{NativeJobExecution(repository,id,onResumed={pending=it},onSettled={pending=null;refresh++})}}
   }
-  OutlinedTextField(input,{if(it.length<=4000){input=it;if(owner!=null)drafts.scheduleSave("project-chat:$projectId",buildJsonObject{put("input",it)},owner,epoch){failure->error=failure.message}}},Modifier.fillMaxWidth(),label={Text("询问项目 AI")},minLines=2,maxLines=5,supportingText={Text("${input.length} / 4000")},enabled=!busy&&draftReady)
+  OutlinedTextField(input,{if(it.length<=4000){input=it;if(owner!=null)drafts.scheduleSave("project-chat:$projectId",buildJsonObject{put("input",it)},owner,epoch){failure->error=failure.message}}},Modifier.fillMaxWidth(),label={ReferenceFieldLabel("询问项目 AI")},minLines=2,maxLines=5,supportingText={Text("${input.length} / 4000")},enabled=!busy&&draftReady)
   Button({if(!busy){busy=true;error=null;scope.launch{try{check(repository.accountId==owner&&repository.epoch==epoch){"账户已变化"};val response=repository.requestDurably("project-chat:$projectId","POST",base,buildJsonObject{put("content",input.trim())});pending=response.text("jobId").takeIf{it.isNotBlank()};input="";drafts.remove("project-chat:$projectId",owner?:error("请登录"),epoch);readHistory()}catch(e:CancellationException){throw e}catch(e:Exception){error=(e.message?:"请求失败")+"；内容已保留。请先刷新确认服务端状态，再决定是否重试。"}finally{busy=false}}}},enabled=draftReady&&!busy&&pending==null&&input.isNotBlank()){Text(if(busy)"发送中"else"发送")}
  }
  if(confirmClear)AlertDialog(onDismissRequest={confirmClear=false},title={Text("清空当前项目的个人 AI 历史？")},text={Text("清空后无法从此列表恢复。")},confirmButton={TextButton({confirmClear=false;busy=true;scope.launch{try{repository.requestDurably("project-chat-clear:$base","DELETE",base);messages=emptyList();cursor=null;refresh++}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}finally{busy=false}}}){Text("清空")}},dismissButton={TextButton({confirmClear=false}){Text("取消")}})

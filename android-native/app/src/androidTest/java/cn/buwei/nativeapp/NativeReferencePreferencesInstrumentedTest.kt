@@ -4,6 +4,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.unit.dp
@@ -17,11 +22,28 @@ import okhttp3.mockwebserver.*
 import org.junit.*
 import org.junit.Assert.*
 import java.io.IOException
+import java.io.File
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 
 class NativeReferencePreferencesInstrumentedTest {
     @get:Rule val compose=createComposeRule()
+    @Test fun referenceFieldLabelsWrapAtLargeFontWithoutChangingAccessibleName(){
+        val label="固定材料中的遗漏或询问评分依据"
+        compose.setContent{NativeTheme{val density=LocalDensity.current;CompositionLocalProvider(LocalDensity provides Density(density.density,2f)){
+            NativeReferencePreferenceContent("fixture",{flowOf(true)},{}){Column(Modifier.width(280.dp).padding(12.dp)){
+                OutlinedTextField("保留原始正文",{},Modifier.fillMaxWidth(),label={ReferenceFieldLabel(label)})
+                Text("此处内容可供 AI 引用，关闭标识不改变权限。")
+                NativeAiReferenceBadge()
+            }}
+        }}}
+        val fieldLabel=compose.onNodeWithText(label,useUnmergedTree=true);val layouts=mutableListOf<TextLayoutResult>()
+        fieldLabel.assertExists().performSemanticsAction(SemanticsActions.GetTextLayoutResult){assertTrue(it(layouts))}
+        assertFalse(layouts.single().didOverflowWidth);assertFalse(layouts.single().didOverflowHeight)
+        compose.onNodeWithText("保留原始正文").assertExists()
+        val output=File(InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null),"native-reference-large-font.png")
+        output.outputStream().use{compose.onRoot().captureToImage().asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)}
+    }
     @Test fun failedSaveKeepsTemporaryChoiceAndReportsFailure() {
         compose.setContent { NativeTheme { NativeReferencePreferenceContent("a",{flowOf(true)},{throw IOException("fixture")}) { NativeAppearanceSettings("system"){} } } }
         compose.onNode(isToggleable()).performScrollTo().performClick()
