@@ -92,17 +92,17 @@ internal fun assessmentStandardBody(title: String, dimensions: List<AssessmentDi
 }
 
 @Composable
-fun AssessmentWorkspace(repository: ClientRepository, projectId: String) {
+fun AssessmentWorkspace(repository: ClientRepository, projectId: String, initialAssessmentId:String?=null, initialSection:String?=null) {
     val account by repository.account.collectAsState()
-    key(projectId, account?.text("id")) { AssessmentWorkspaceContent(repository, projectId) }
+    key(projectId, account?.text("id"), repository.epoch, initialAssessmentId, initialSection) { AssessmentWorkspaceContent(repository, projectId, initialAssessmentId, initialSection) }
 }
 
 @Composable
-private fun AssessmentWorkspaceContent(repository: ClientRepository, projectId: String) {
+private fun AssessmentWorkspaceContent(repository: ClientRepository, projectId: String, initialAssessmentId:String?, initialSection:String?) {
     val base = assessmentBase(projectId); val scope = rememberCoroutineScope(); val owner = repository.accountId; val epoch = repository.epoch
-    var aiEnabled by remember { mutableStateOf(false) }; var section by remember { mutableStateOf("standards") }; var refresh by remember { mutableIntStateOf(0) }; var busy by remember { mutableStateOf(false) }; var error by remember { mutableStateOf<String?>(null) }
+    var aiEnabled by remember { mutableStateOf(false) }; var section by remember { mutableStateOf(initialSection?.takeIf{it in listOf("standards","assessments","reviews")}?:"standards") }; var refresh by remember { mutableIntStateOf(0) }; var busy by remember { mutableStateOf(false) }; var error by remember { mutableStateOf<String?>(null) }
     var standards by remember { mutableStateOf<List<JsonObject>>(emptyList()) }; var records by remember { mutableStateOf<List<JsonObject>>(emptyList()) }; var goal by remember { mutableStateOf(JsonObject(emptyMap())) }; var project by remember { mutableStateOf(JsonObject(emptyMap())) }
-    var selected by remember { mutableStateOf("") }; var detail by remember { mutableStateOf<JsonObject?>(null) }; var jobId by remember { mutableStateOf("") }
+    var selected by remember { mutableStateOf(initialAssessmentId.orEmpty()) }; var detail by remember { mutableStateOf<JsonObject?>(null) }; var jobId by remember { mutableStateOf("") }
     var materials by remember { mutableStateOf(setOf<String>()) }; var sources by remember { mutableStateOf(setOf<String>()) }
     var confirm by remember { mutableStateOf<Pair<String, suspend () -> Unit>?>(null) }
     fun runAction(block: suspend () -> Unit) { if (busy) return; busy = true; error = null; scope.launch { try { block(); refresh++ } catch (e: CancellationException) { throw e } catch (e: Exception) { error = (e.message ?: "操作失败") + "；请先刷新核对服务端状态，不会自动重放。" } finally { busy = false } } }

@@ -1,7 +1,6 @@
 package cn.buwei.nativeapp.features
 
 import android.net.Uri
-import androidx.core.net.toUri
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -13,18 +12,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import cn.buwei.nativeapp.data.ClientRepository
+import cn.buwei.nativeapp.data.NativeDraftStore
+import cn.buwei.nativeapp.data.requestDurably
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.*
-import java.util.UUID
 
 @Composable
 fun AiConversationScreen(repository:ClientRepository,projectId:String,onResource:(String)->Unit = {}){
  val base="/api/v1/projects/${Uri.encode(projectId)}/ai-chat";val scope=rememberCoroutineScope()
  var messages by remember(projectId,repository.accountId){mutableStateOf<List<JsonObject>>(emptyList())};var cursor by remember{mutableStateOf<String?>(null)};var pending by remember{mutableStateOf<String?>(null)}
- var input by rememberSaveable(projectId,repository.accountId){mutableStateOf("")};val intentKey=remember(input){UUID.randomUUID().toString()};var refresh by remember{mutableIntStateOf(0)};var busy by remember{mutableStateOf(false)};var loading by remember{mutableStateOf(true)};var error by remember{mutableStateOf<String?>(null)};var confirmClear by remember{mutableStateOf(false)}
+ var input by rememberSaveable(projectId,repository.accountId){mutableStateOf("")};var refresh by remember{mutableIntStateOf(0)};var busy by remember{mutableStateOf(false)};var loading by remember{mutableStateOf(true)};var error by remember{mutableStateOf<String?>(null)};var confirmClear by remember{mutableStateOf(false)}
+ val owner=repository.accountId;val epoch=remember(owner){repository.epoch};val drafts=remember(repository){NativeDraftStore(repository)};var draftReady by remember(projectId,owner,epoch){mutableStateOf(false)}
+ LaunchedEffect(projectId,owner,epoch){try{drafts.read("project-chat:$projectId",owner?:return@LaunchedEffect,epoch)?.let{input=it.text("input")};draftReady=true}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}}
  suspend fun readHistory(older:Boolean=false){val page=repository.get(base+(if(older&&cursor!=null)"?cursor=${Uri.encode(cursor)}"else""));val loaded=(page["items"]as? JsonArray).orEmpty().mapNotNull{it as? JsonObject};messages=(if(older)messages+loaded else loaded).distinctBy{it.text("id")}.sortedBy{it.text("createdAt")};cursor=page.text("nextCursor").takeIf{it.isNotBlank()};pending=page.text("pendingJobId").takeIf{it.isNotBlank()}}
  LaunchedEffect(projectId,repository.accountId,refresh){loading=true;try{readHistory();error=null}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}finally{loading=false}}
  Column(Modifier.fillMaxSize().padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
@@ -39,24 +41,16 @@ fun AiConversationScreen(repository:ClientRepository,projectId:String,onResource
     Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
      Text(if(message.text("role")=="user")"我"else"AI",style=MaterialTheme.typography.labelLarge)
      NativeMarkdown(message.text("content"))
-     (message["references"]as? JsonArray).orEmpty().forEach{reference->val ref=reference.jsonObject;val section=safeProjectSection(ref.text("href"),projectId);if(section!=null)TextButton({onResource(section)}){Text(ref.text("title"))}else Text(ref.text("title"),style=MaterialTheme.typography.labelSmall)}
+     (message["references"]as? JsonArray).orEmpty().forEach{reference->val ref=reference.jsonObject;val href=ref.text("href");val target=cn.buwei.nativeapp.nativeDestination(href);if(target?.projectId==projectId)TextButton({onResource(href)}){Text(ref.text("title"))}else Text(ref.text("title"),style=MaterialTheme.typography.labelSmall)}
      if(message.text("role")=="user")ChatOperations(repository,base,message.text("questionId"),pending!=null)
     }
    }}
    pending?.let{id->item{NativeJobExecution(repository,id,onSettled={pending=null;refresh++})}}
   }
-  OutlinedTextField(input,{if(it.length<=4000)input=it},Modifier.fillMaxWidth(),label={Text("询问项目 AI")},minLines=2,maxLines=5,supportingText={Text("${input.length} / 4000")},enabled=!busy)
-  Button({busy=true;error=null;scope.launch{try{val response=repository.request("POST",base,buildJsonObject{put("content",input.trim())},intentKey);pending=response.text("jobId").takeIf{it.isNotBlank()};input="";readHistory()}catch(e:CancellationException){throw e}catch(e:Exception){error=(e.message?:"请求失败")+"；内容已保留。请先刷新确认服务端状态，再决定是否重试。"}finally{busy=false}}},enabled=!busy&&pending==null&&input.isNotBlank()){Text(if(busy)"发送中"else"发送")}
+  OutlinedTextField(input,{if(it.length<=4000){input=it;if(owner!=null)drafts.scheduleSave("project-chat:$projectId",buildJsonObject{put("input",it)},owner,epoch){failure->error=failure.message}}},Modifier.fillMaxWidth(),label={Text("询问项目 AI")},minLines=2,maxLines=5,supportingText={Text("${input.length} / 4000")},enabled=!busy&&draftReady)
+  Button({if(!busy){busy=true;error=null;scope.launch{try{check(repository.accountId==owner&&repository.epoch==epoch){"账户已变化"};val response=repository.requestDurably("project-chat:$projectId","POST",base,buildJsonObject{put("content",input.trim())});pending=response.text("jobId").takeIf{it.isNotBlank()};input="";drafts.remove("project-chat:$projectId",owner?:error("请登录"),epoch);readHistory()}catch(e:CancellationException){throw e}catch(e:Exception){error=(e.message?:"请求失败")+"；内容已保留。请先刷新确认服务端状态，再决定是否重试。"}finally{busy=false}}}},enabled=draftReady&&!busy&&pending==null&&input.isNotBlank()){Text(if(busy)"发送中"else"发送")}
  }
- if(confirmClear)AlertDialog(onDismissRequest={confirmClear=false},title={Text("清空当前项目的个人 AI 历史？")},text={Text("清空后无法从此列表恢复。")},confirmButton={TextButton({confirmClear=false;busy=true;scope.launch{try{repository.request("DELETE",base,idempotencyKey=UUID.randomUUID().toString());messages=emptyList();cursor=null;refresh++}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}finally{busy=false}}}){Text("清空")}},dismissButton={TextButton({confirmClear=false}){Text("取消")}})
-}
-
-private fun safeProjectSection(href:String,projectId:String):String?{
- if(!href.startsWith("/app/projects/${Uri.encode(projectId)}"))return null
- val prefix="/app/projects/${Uri.encode(projectId)}";val path=href.toUri().path?:return null
- if(path!=prefix&&!path.startsWith("$prefix/"))return null
- val part=path.removePrefix(prefix).trim('/').substringBefore('/')
- return when(part){"tasks"->"tasks";"sources","files","materials","data"->"data";"assessments","standards","reviews"->"assessment";"members","team"->"team";""->"overview";else->null}
+ if(confirmClear)AlertDialog(onDismissRequest={confirmClear=false},title={Text("清空当前项目的个人 AI 历史？")},text={Text("清空后无法从此列表恢复。")},confirmButton={TextButton({confirmClear=false;busy=true;scope.launch{try{repository.requestDurably("project-chat-clear:$base","DELETE",base);messages=emptyList();cursor=null;refresh++}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}finally{busy=false}}}){Text("清空")}},dismissButton={TextButton({confirmClear=false}){Text("取消")}})
 }
 
 @Composable
@@ -82,7 +76,7 @@ fun NativeJobExecution(repository:ClientRepository,jobId:String,onSettled:()->Un
    }
   };error?.let{Text(it,color=MaterialTheme.colorScheme.error);TextButton({refresh++}){Text("刷新状态")}}
  }}
- if(action!=null)AlertDialog(onDismissRequest={action=null},title={Text(when(action){"continue"->"继续执行？";"output"->"输出当前结果？";else->"取消执行？"})},text={Text(if(action=="continue")"继续可能调用模型并产生费用。请求结果不明确时不会自动重放。"else"此操作将改变当前后台执行状态。")},confirmButton={TextButton({val chosen=action!!;action=null;busy=true;scope.launch{try{val current=job?:return@launch;repository.request("POST","/api/v1/jobs/${Uri.encode(jobId)}/execution/$chosen",buildJsonObject{put("expectedGeneration",current.obj("execution")["generation"]?:JsonPrimitive(1))},UUID.randomUUID().toString());refresh++}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}finally{busy=false}}}){Text("确认")}},dismissButton={TextButton({action=null}){Text("返回")}})
+ if(action!=null)AlertDialog(onDismissRequest={action=null},title={Text(when(action){"continue"->"继续执行？";"output"->"输出当前结果？";else->"取消执行？"})},text={Text(if(action=="continue")"继续可能调用模型并产生费用。请求结果不明确时不会自动重放。"else"此操作将改变当前后台执行状态。")},confirmButton={TextButton({val chosen=action!!;action=null;busy=true;scope.launch{try{val current=job?:return@launch;repository.requestDurably("job-control:$jobId","POST","/api/v1/jobs/${Uri.encode(jobId)}/execution/$chosen",buildJsonObject{put("expectedGeneration",current.obj("execution")["generation"]?:JsonPrimitive(1))});refresh++}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}finally{busy=false}}}){Text("确认")}},dismissButton={TextButton({action=null}){Text("返回")}})
 }
 
 internal fun activityProgress(activity:JsonObject):String?{

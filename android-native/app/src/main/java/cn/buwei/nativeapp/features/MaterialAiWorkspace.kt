@@ -155,7 +155,7 @@ internal fun materialAiAdoptionBody(payload:JsonObject,edited:String,initial:Str
     require(reviewed){"采纳必须明确确认已人工复核"};require(expectedRevision>0){"材料版本无效"};require(materialId.isNotBlank()){"请选择目标材料"}
     val original=(payload["doc"]as? JsonObject)?.takeIf{it.text("type")=="doc"&&it["content"]is JsonArray}
     val unchanged=original!=null&&edited==initial
-    val document=if(unchanged)original!! else markdownToNativeDoc(edited)
+    val document=if(unchanged)original else markdownToNativeDoc(edited)
     require(document.toString().toByteArray().size<=200*1024){"正文超过材料文档保存上限，编辑仍会保留"}
     require(edited.length<=200000){"Markdown 超过保存上限"}
     return buildJsonObject {

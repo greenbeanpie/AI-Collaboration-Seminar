@@ -21,7 +21,10 @@ try {
   $output=Join-Path $repo 'output/android-native';New-Item -ItemType Directory -Force $output|Out-Null
   $apk=Get-ChildItem (Join-Path $project "app/build/outputs/apk/$mode") -Filter '*.apk'|Select-Object -First 1
   if(!$apk){throw 'APK was not generated'}
-  $destination=Join-Path $output "buwei-native-preview-0.1.0-$mode.apk"
+  $apkMetadata=Get-Content -LiteralPath (Join-Path $apk.DirectoryName 'output-metadata.json') -Raw | ConvertFrom-Json
+  $version=$apkMetadata.elements[0].versionName
+  if($version -notmatch '^[A-Za-z0-9._-]+$'){throw 'APK version metadata is invalid'}
+  $destination=Join-Path $output "buwei-native-$version-$mode.apk"
   if($Debug){Copy-Item -LiteralPath $apk.FullName -Destination $destination -Force}
   else {
     if(!$SigningDirectory){throw 'Release requires explicit -SigningDirectory pointing to an existing key; no replacement key is generated.'}
@@ -36,6 +39,6 @@ try {
   }
   & "$JavaRoot/bin/java.exe" --enable-native-access=ALL-UNNAMED -jar "$SdkRoot/build-tools/37.0.0/lib/apksigner.jar" verify --verbose --print-certs $destination | Set-Content "$destination.signature.txt"
   if($LASTEXITCODE){throw 'APK signature verification failed'}
-  [ordered]@{path=$destination;sourceCommit=(& git -C $repo rev-parse HEAD).Trim();bytes=(Get-Item $destination).Length;sha256=(Get-FileHash $destination -Algorithm SHA256).Hash;mode=$mode;applicationId=if($Debug){'cn.buwei.mobile.nativepreview.debug'}else{'cn.buwei.mobile.nativepreview'};architecture='arm64-v8a and x86_64 (managed UI; universal APK)'}|ConvertTo-Json|Set-Content (Join-Path $output "$mode-artifact.json")
+  [ordered]@{path=$destination;sourceCommit=(& git -C $repo rev-parse HEAD).Trim();sourceTreeDirty=[bool](& git -C $repo status --porcelain --untracked-files=no);versionName=$version;versionCode=$apkMetadata.elements[0].versionCode;bytes=(Get-Item $destination).Length;sha256=(Get-FileHash $destination -Algorithm SHA256).Hash;mode=$mode;applicationId=if($Debug){'cn.buwei.mobile.nativepreview.debug'}else{'cn.buwei.mobile.nativepreview'};architecture='arm64-v8a and x86_64 (managed UI; universal APK)'}|ConvertTo-Json|Set-Content (Join-Path $output "$mode-artifact.json")
   Write-Output $destination
 } finally {foreach($name in $names){[Environment]::SetEnvironmentVariable($name,$previous[$name],'Process')}}

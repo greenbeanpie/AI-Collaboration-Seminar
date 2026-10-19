@@ -19,30 +19,35 @@ import kotlinx.serialization.json.*
 internal val dataPurposes=listOf("background" to "项目背景","reference" to "参考资料","output" to "成果材料")
 internal fun JsonObject.dataFlag(name:String)=get(name)?.jsonPrimitive?.booleanOrNull==true
 internal fun dataStatus(status:String)=mapOf("pending" to "尚未开始","queued" to "已排队","processing" to "正在处理","running" to "正在处理","waiting_input" to "待补充或继续","ready" to "已完成","succeeded" to "已完成","failed" to "处理失败","cancelled" to "已取消","skipped" to "不适用","disabled" to "AI 未启用","waiting_config" to "等待模型配置","not_applicable" to "不适用","available" to "文件已保存","quarantined" to "校验未通过","discarded" to "文件已弃用")[status]?:status
-@Composable fun DataWorkspace(repository:ClientRepository,projectId:String){key(projectId,repository.accountId){DataWorkspaceContent(repository,projectId)}}
-@Composable private fun DataWorkspaceContent(repository:ClientRepository,projectId:String){
- val base=twBase(projectId);var mode by rememberSaveable{mutableStateOf("library")};var resourceType by rememberSaveable{mutableStateOf("material")};var resourceId by rememberSaveable{mutableStateOf<String?>(null)};var refresh by remember{mutableIntStateOf(0)};var captureBusy by remember{mutableStateOf(false)}
- BackHandler(mode!="library"||resourceId!=null){if(!captureBusy){mode="library";resourceId=null}}
+@Composable fun DataWorkspace(repository:ClientRepository,projectId:String,initial:cn.buwei.nativeapp.NativeDestination?=null,onActivityChange:(Boolean)->Unit={},onMaterialAi:()->Unit={}){key(projectId,repository.accountId,repository.epoch,initial){DataWorkspaceContent(repository,projectId,initial,onActivityChange,onMaterialAi)}}
+@Composable private fun DataWorkspaceContent(repository:ClientRepository,projectId:String,initial:cn.buwei.nativeapp.NativeDestination?,onActivityChange:(Boolean)->Unit,onMaterialAi:()->Unit){
+ val base=twBase(projectId);var mode by rememberSaveable{mutableStateOf("library")};var resourceType by rememberSaveable{mutableStateOf(initial?.resourceType?:"material")};var resourceId by rememberSaveable{mutableStateOf(initial?.recordId)};var fixedVersion by rememberSaveable{mutableStateOf(initial?.versionId)};var refresh by remember{mutableIntStateOf(0)};var captureBusy by remember{mutableStateOf(false)}
+ val activityCallback by rememberUpdatedState(onActivityChange)
+ LaunchedEffect(captureBusy){activityCallback(captureBusy)}
+ DisposableEffect(Unit){onDispose{activityCallback(false)}}
+ BackHandler(mode!="library"||resourceId!=null||fixedVersion!=null){if(!captureBusy){mode="library";resourceId=null;fixedVersion=null}}
  // Recording subpage deliberately owns scrolling; never nest the native capture surface.
  if(mode=="capture"){Column(Modifier.fillMaxSize()){TextButton({mode="new"},enabled=!captureBusy){Text("返回新增资料")};Box(Modifier.weight(1f)){MediaWorkspace(repository,projectId){captureBusy=it}}};return}
  Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
  Text("项目资料",style=MaterialTheme.typography.headlineSmall)
- if(mode!="library"||resourceId!=null)TextButton({mode="library";resourceId=null},enabled=!captureBusy){Text("返回资料列表")}
- if(resourceId!=null){DataWorkspaceDetail(repository,projectId,resourceType,resourceId!!,refresh){refresh++};return@Column}
+ if(mode!="library"||resourceId!=null||fixedVersion!=null)TextButton({mode="library";resourceId=null;fixedVersion=null},enabled=!captureBusy){Text("返回资料列表")}
+ if(fixedVersion!=null){Text("引用的固定版本 · 只读",style=MaterialTheme.typography.titleMedium);TextButton({fixedVersion=null}){Text("返回当前资料")};DataWorkspaceReference(repository,projectId,resourceType,fixedVersion!!,initiallyOpen=true,initialPage=initial?.pageNumber);return@Column}
+ if(resourceId!=null){DataWorkspaceDetail(repository,projectId,resourceType,resourceId!!,refresh,onMaterialAi){refresh++};return@Column}
  if(mode=="new"){DataWorkspaceIntake(repository,projectId,{mode="capture"},{captureBusy=it}){type,id->resourceType=type;resourceId=id;mode="library";refresh++};return@Column}
  if(mode=="files"){DataWorkspaceFiles(repository,projectId,refresh){refresh++};return@Column}
- Button({mode="new"}){Text("新增资料")};OutlinedButton({mode="files"}){Text("附件与回收站")};TextButton({refresh++}){Text("刷新资料")}
+ Button({mode="new"}){Text("新增资料")};OutlinedButton(onMaterialAi){Text("AI 补位与成果采纳")};OutlinedButton({mode="files"}){Text("附件与回收站")};TextButton({refresh++}){Text("刷新资料")}
  var query by rememberSaveable{mutableStateOf("")};var applied by rememberSaveable{mutableStateOf("")};var purpose by rememberSaveable{mutableStateOf("")};var archived by rememberSaveable{mutableStateOf(false)}
  TaskWorkspaceField("搜索资料标题",query,{query=it},200);OutlinedButton({applied=query.trim()}){Text("搜索资料")};TaskWorkspaceChoice("资料用途",listOf("" to "全部资料")+dataPurposes,purpose){purpose=it};TaskWorkspaceChoice("资料视图",listOf("false" to "当前资料","true" to "已归档"),archived.toString()){archived=it=="true"}
  val path="$base/resource-library?limit=50&q=${Uri.encode(applied)}&archived=$archived"+(if(purpose.isNotBlank())"&purpose=$purpose"else"")
  TaskWorkspacePage(repository,path,refresh){rows->if(rows.isEmpty())Text("当前视图暂无资料");rows.forEach{row->Card(Modifier.fillMaxWidth()){Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){Text(row.twText("title"),style=MaterialTheme.typography.titleMedium);Text((dataPurposes.firstOrNull{it.first==row.twText("purpose")}?.second?:"资料")+if(row.twText("resourceType")=="source")" · 来源原文"else" · 成果文档");if(row.dataFlag("systemManaged"))Text("系统背景 · 自动同步");if(row.twText("archivedAt").isNotBlank())Text("已归档 · 只读");Text("更新于 ${row.twText("updatedAt")}");OutlinedButton({resourceType=row.twText("resourceType");resourceId=row.twText("resourceId")}){Text("查看资料")}}}}}
  }
 }
-@Composable private fun DataWorkspaceDetail(repository:ClientRepository,project:String,type:String,id:String,refresh:Int,onChanged:()->Unit){
+@Composable private fun DataWorkspaceDetail(repository:ClientRepository,project:String,type:String,id:String,refresh:Int,onMaterialAi:()->Unit,onChanged:()->Unit){
  val base=twBase(project);var resource by remember(type,id){mutableStateOf<JsonObject?>(null)};var error by remember{mutableStateOf<String?>(null)}
  LaunchedEffect(type,id,refresh){try{resource=repository.get("$base/resource-library/$type/${Uri.encode(id)}");error=null}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}}
  error?.let{Text(it,color=MaterialTheme.colorScheme.error)};val row=resource?:return
  Text(row.twText("title"),style=MaterialTheme.typography.titleLarge);Text("${dataPurposes.firstOrNull{it.first==row.twText("purpose")}?.second.orEmpty()} · 创建于 ${row.twText("createdAt")}")
+ if(type=="material")OutlinedButton(onMaterialAi){Text("AI 补位与成果采纳")}
  if(row.dataFlag("canManage")&&row.twText("archivedAt").isBlank()&&row.twText("deletedAt").isBlank()){var purpose by rememberSaveable(id,row.twText("revision")){mutableStateOf(row.twText("purpose"))};TaskWorkspaceChoice("修改资料用途",dataPurposes,purpose){purpose=it};TaskWorkspaceAction(repository,"保存资料用途","$base/resource-library/$type/$id",buildJsonObject{put("purpose",purpose);put("expectedRevision",twRevision(row))},"PATCH",confirmation="修改用途可能按项目配置继续后台文件处理，请核对后保存。",onSuccess={resource=it;onChanged()})}
  if(type=="material")DataWorkspaceMaterial(repository,project,row,refresh,onChanged)else DataWorkspaceSource(repository,project,row,refresh,onChanged)
 }

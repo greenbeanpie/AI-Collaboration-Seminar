@@ -15,4 +15,8 @@ class NativeViewModel(application:Application):AndroidViewModel(application) {
     var busy by mutableStateOf(true)
     var section by mutableStateOf("projects")
     var projectId by mutableStateOf<String?>(null)
+    var destination by mutableStateOf<NativeDestination?>(null)
+    var workspaceActive by mutableStateOf(false)
+    var routeLoading by mutableStateOf(false)
+    var navigationGeneration=0L
 }

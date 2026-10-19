@@ -25,6 +25,7 @@ internal data class RichSelection(val path:List<Int>,val range:TextRange)
     var editing by rememberSaveable(owner,epoch,path){mutableStateOf(false)}
     var recovery by remember(owner,epoch,path){mutableStateOf<JsonObject?>(null)}
     var conflict by remember(owner,epoch,path){mutableStateOf<JsonObject?>(null)}
+    var conflictOperationId by rememberSaveable(owner,epoch,path){mutableStateOf<String?>(null)}
     var busy by remember(owner,epoch,path){mutableStateOf(false)}
     var message by remember(owner,epoch,path){mutableStateOf<String?>(null)}
     var error by remember(owner,epoch,path){mutableStateOf<String?>(null)}
@@ -33,7 +34,7 @@ internal data class RichSelection(val path:List<Int>,val range:TextRange)
     var future by remember(owner,epoch,path){mutableStateOf<List<JsonObject>>(emptyList())}
     var selection by remember(owner,epoch,path){mutableStateOf<RichSelection?>(null)}
     var linkDialog by remember{mutableStateOf(false)};var link by remember{mutableStateOf("")};var discard by remember{mutableStateOf(false)}
-    fun envelope(value:JsonObject=document)=buildJsonObject {put("doc",value);put("revision",revision);put("updatedAt",System.currentTimeMillis());put("queued",queued)}
+    fun envelope(value:JsonObject=document)=buildJsonObject {put("doc",value);put("revision",revision);put("updatedAt",System.currentTimeMillis());put("queued",queued);put("conflictOperationId",conflictOperationId?.let(::JsonPrimitive)?:JsonNull)}
     fun persist(value:JsonObject) {store.scheduleSave(draftKey,envelope(value),owner,epoch){failure->error="本机草稿保存失败，请保留此页面并尽快保存：${failure.message.orEmpty()}"}}
     fun change(value:JsonObject) {if(busy||queued)return;history=(history+document).takeLast(20);future=emptyList();serialized=value.toString();persist(value);message=null}
     suspend fun leave() {store.save(draftKey,envelope(),owner,epoch);editing=false;message="编辑已保存在当前账户的本机草稿中"}
@@ -43,7 +44,7 @@ internal data class RichSelection(val path:List<Int>,val range:TextRange)
         Text("找到本机材料草稿",style=MaterialTheme.typography.titleMedium)
         Text("基于版本 ${saved.text("revision")}；当前材料版本 ${material.text("revision")}")
         Row {
-            TextButton(onClick={serialized=saved.obj("doc").toString();revision=saved["revision"]?.jsonPrimitive?.intOrNull?:revision;queued=saved.flag("queued");recovery=null;editing=true;message=if(queued)"此草稿已排队等待同步，请同步并核对后继续编辑"else"已恢复本机编辑，保存仍按原版本核对"}){Text("恢复本机编辑")}
+            TextButton(onClick={serialized=saved.obj("doc").toString();revision=saved["revision"]?.jsonPrimitive?.intOrNull?:revision;queued=saved.flag("queued");conflictOperationId=saved.text("conflictOperationId").takeIf{it.isNotBlank()};recovery=null;editing=true;message=if(queued)"此草稿已排队等待同步，请同步并核对后继续编辑"else"已恢复本机编辑，保存仍按原版本核对"}){Text("恢复本机编辑")}
             TextButton(onClick={discard=true}){Text("删除本机草稿")}
         }
     }}}
@@ -63,7 +64,13 @@ internal data class RichSelection(val path:List<Int>,val range:TextRange)
         Text("服务端版本已变化",style=MaterialTheme.typography.titleMedium)
         Text("本机编辑仍基于版本 $revision；最新版本 ${latest.text("revision")}。请对照最新正文后决定是否以本机编辑保存新版本。")
         NativeMarkdown(latest.obj("currentVersion").text("markdown"))
-        TextButton(onClick={revision=latest["revision"]!!.jsonPrimitive.int;conflict=null;persist(document);message="已按你确认的最新版本继续，尚未提交"}){Text("已核对，保留本机编辑继续")}
+        TextButton(onClick={if(!busy){busy=true;scope.launch{try{
+            // Keep an atomic draft before removing only this reviewed, failed material intent.
+            store.save(draftKey,envelope(),owner,epoch)
+            conflictOperationId?.let{repository.acknowledgeMaterialConflict(it,path,owner,epoch)}
+            revision=latest["revision"]!!.jsonPrimitive.int;conflict=null;conflictOperationId=null;queued=false
+            store.save(draftKey,envelope(),owner,epoch);message="已按你确认的最新版本继续，尚未提交"
+        }catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}finally{busy=false}}}},enabled=!busy){Text("已核对，保留本机编辑继续")}
     }}}
     if(queued)OutlinedButton(onClick={scope.launch{busy=true;try{repository.sync();if(repository.pending().any{it.path==repository.resolvePath(path)})message="此材料仍有待同步或冲突记录，请打开本机待同步核对"else {conflict=repository.get(path);queued=false;message="同步已完成，请核对服务端最新正文"}}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}finally{busy=false}}},enabled=!busy){Text("同步并核对")}
     FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
@@ -78,7 +85,13 @@ internal data class RichSelection(val path:List<Int>,val range:TextRange)
             else {revision=response["revision"]?.jsonPrimitive?.intOrNull?:revision;store.remove(draftKey,owner,epoch);editing=false;message="已保存新版本";history=emptyList();future=emptyList()}
         }catch(e:CancellationException){throw e}catch(e:Exception){
             error=(e.message?:"保存失败")+"；本机编辑已保留"
-            if(e is ApiException&&e.status==409)try{conflict=repository.get(path)}catch(read:CancellationException){throw read}catch(_:Exception){message="无法读取最新版本，请联网后刷新核对"}
+            if(e is ApiException&&e.status==409)try{
+                conflictOperationId=repository.pending().filter{it.path==repository.resolvePath(path)&&it.method=="PUT"&&it.state=="conflict"}.firstOrNull{row->
+                    val body=repository.json.parseToJsonElement(row.body).jsonObject
+                    body["expectedRevision"]?.jsonPrimitive?.intOrNull==revision&&body["doc"]==document
+                }?.id
+                store.save(draftKey,envelope(),owner,epoch);conflict=repository.networkJson("GET",path,expectedOwner=owner,expectedEpoch=epoch)
+            }catch(read:CancellationException){throw read}catch(_:Exception){message="无法读取最新版本，请联网后刷新核对"}
         }finally{busy=false}}},enabled=!busy&&!queued&&conflict==null){Text("保存新版本")}
         TextButton(onClick={scope.launch{try{leave()}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}}},enabled=!busy){Text("暂存编辑并返回")}
     }

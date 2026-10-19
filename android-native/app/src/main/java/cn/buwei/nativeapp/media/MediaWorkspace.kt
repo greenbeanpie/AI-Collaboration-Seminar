@@ -37,6 +37,8 @@ import java.util.UUID
 @Composable fun MediaWorkspace(repository:ClientRepository,projectId:String?,onActivityChange:(Boolean)->Unit = {}) {
     val context=LocalContext.current;val scope=rememberCoroutineScope()
     val owner=repository.accountId?:return
+    val epoch=remember(owner){repository.epoch}
+    fun assertOwner(){check(repository.accountId==owner&&repository.epoch==epoch){"账户已变化，请重新打开录制与文件"}}
     val root=File(context.filesDir,"accounts/$owner/attachments").apply {mkdirs()}
     var files by remember {mutableStateOf(root.listFiles()?.filter {it.isFile&&!it.name.endsWith(".partial")}.orEmpty())}
     var selected by remember {mutableStateOf<File?>(null)}
@@ -50,6 +52,7 @@ import java.util.UUID
     DisposableEffect(Unit){onDispose{activityCallback(false)}}
     fun reload() { files=root.listFiles()?.filter {it.isFile&&!it.name.endsWith(".partial")}.orEmpty();drafts=File(context.dataDir,"recordings/$owner").listFiles()?.filter {File(it,"manifest.json").isFile}.orEmpty() }
     fun startRecording(kind:String) {
+        if(repository.accountId!=owner||repository.epoch!=epoch){progress="账户已变化，请重新打开录制与文件";return}
         if(projectId==null){progress="请先打开项目再录制";return}
         val args=JSONObject().put("root",File(context.dataDir,"recordings").absolutePath).put("accountId",owner).put("id",UUID.randomUUID().toString()).put("projectId",projectId).put("kind",kind).put("accountEpoch",repository.epoch)
         if(microphone.isNotBlank())args.put("inputDeviceId",microphone)
@@ -62,14 +65,15 @@ import java.util.UUID
     val picker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {uri->if(uri!=null) scope.launch {
         busy=true
         try {
+            assertOwner()
             val name=context.contentResolver.query(uri,arrayOf(OpenableColumns.DISPLAY_NAME),null,null,null)?.use {if(it.moveToFirst())it.getString(0) else null}?:"附件"
             val safeName=name.replace(Regex("[^\\p{L}\\p{N}._ -]"),"_").take(180)
             val destination=File(root,UUID.randomUUID().toString().take(8)+"-"+safeName)
             withContext(Dispatchers.IO) {
                 val temporary=File(destination.path+".partial")
                 try {
-                    context.contentResolver.openInputStream(uri)?.use {input->temporary.outputStream().use {out->val buffer=ByteArray(65536);while(true){ensureActive();check(repository.accountId==owner){"账户已变化"};val count=input.read(buffer);if(count<0)break;check(temporary.length()+count<=512L*1024*1024){"文件超过本机导入上限 512 MiB"};check(android.os.StatFs(root.path).availableBytes>64L*1024*1024){"本机剩余存储不足"};out.write(buffer,0,count)}}}?:error("无法读取文件")
-                    ensureActive();check(repository.accountId==owner){"账户已变化"}
+                    context.contentResolver.openInputStream(uri)?.use {input->temporary.outputStream().use {out->val buffer=ByteArray(65536);while(true){ensureActive();assertOwner();val count=input.read(buffer);if(count<0)break;check(temporary.length()+count<=512L*1024*1024){"文件超过本机导入上限 512 MiB"};check(android.os.StatFs(root.path).availableBytes>64L*1024*1024){"本机剩余存储不足"};out.write(buffer,0,count)}}}?:error("无法读取文件")
+                    ensureActive();assertOwner()
                     check(temporary.renameTo(destination)){"本机文件保存失败"}
                 } finally {temporary.delete()}
             }
@@ -98,6 +102,7 @@ import java.util.UUID
         if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
         selected?.let {file->Card(Modifier.fillMaxWidth()){Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
             Text(file.name);Text("${file.length()/1024} KiB")
+            Text("上传后可能按项目配置自动处理正文、转写或生成总结，并产生 AI 费用。请预览后再确认上传。",style=MaterialTheme.typography.bodySmall)
             TextButton(onClick={selected=file;progress="预览 ${file.name}"}){Text("原生预览")}
             if(projectId!=null)Button(onClick={scope.launch {busy=true;try{val id=AttachmentTransfer(repository).upload(projectId,file){progress=it};progress="已上传文件：$id"}catch(e:Exception){if(e is CancellationException)throw e;progress=e.message?:"上传失败"}finally{busy=false}}},enabled=!busy){Text("确认上传原文件")}
             if(projectId!=null&&file.extension.lowercase() in listOf("pdf","docx","xlsx","pptx"))OutlinedButton(onClick={scope.launch {busy=true;try{val result=AttachmentTransfer(repository).importDocument(projectId,file){progress=it};progress="正文导入完成：$result"}catch(e:Exception){if(e is CancellationException)throw e;progress=e.message?:"导入失败"}finally{busy=false}}},enabled=!busy){Text("确认上传并导入正文")}

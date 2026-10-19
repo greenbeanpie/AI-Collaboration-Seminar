@@ -16,17 +16,17 @@ import cn.buwei.nativeapp.media.AttachmentActions
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.*
 
-@Composable fun TaskWorkspace(repository:ClientRepository,projectId:String){
- key(projectId,repository.accountId){TaskWorkspaceContent(repository,projectId)}
+@Composable fun TaskWorkspace(repository:ClientRepository,projectId:String,initialTaskId:String?=null,initialAction:String?=null){
+ key(projectId,repository.accountId,repository.epoch,initialTaskId,initialAction){TaskWorkspaceContent(repository,projectId,initialTaskId,initialAction)}
 }
-@Composable private fun TaskWorkspaceContent(repository:ClientRepository,projectId:String){
- val base=twBase(projectId);var refresh by remember{mutableIntStateOf(0)};var selected by rememberSaveable{mutableStateOf<String?>(null)};var create by rememberSaveable{mutableStateOf(false)};var planning by rememberSaveable{mutableStateOf(false)}
+@Composable private fun TaskWorkspaceContent(repository:ClientRepository,projectId:String,initialTaskId:String?,initialAction:String?){
+ val base=twBase(projectId);var refresh by remember{mutableIntStateOf(0)};var selected by rememberSaveable{mutableStateOf(initialTaskId)};var create by rememberSaveable{mutableStateOf(false)};var planning by rememberSaveable{mutableStateOf(false)}
  var graph by remember{mutableStateOf<JsonObject?>(null)};var me by remember{mutableStateOf<JsonObject?>(null)};var members by remember{mutableStateOf<List<JsonObject>>(emptyList())};var error by remember{mutableStateOf<String?>(null)}
  LaunchedEffect(projectId,repository.accountId,refresh){try{me=repository.get("$base/members/me");graph=repository.get("$base/tasks/graph");members=taskWorkspaceMembers(repository,base);error=null}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}}
  BackHandler(selected!=null||create||planning){selected=null;create=false;planning=false}
  Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
   Text("任务协作",style=MaterialTheme.typography.headlineSmall);error?.let{Text(it,color=MaterialTheme.colorScheme.error)}
-  if(selected!=null){TextButton({selected=null}){Text("返回任务列表")};TaskWorkspaceDetail(repository,projectId,selected!!,graph,me,members,refresh){refresh++};return@Column}
+  if(selected!=null){TextButton({selected=null}){Text("返回任务列表")};TaskWorkspaceDetail(repository,projectId,selected!!,graph,me,members,refresh,if(selected==initialTaskId)initialAction else null){refresh++};return@Column}
   if(planning){TextButton({planning=false}){Text("返回任务列表")};if(graph!=null&&me!=null)TaskWorkspacePlanning(repository,base,graph!!,me!!,members){refresh++};return@Column}
   if(create){TextButton({create=false}){Text("返回任务列表")};if(graph!=null)TaskWorkspaceEditor(repository,base,null,graph!!,members){create=false;refresh++};return@Column}
   OutlinedButton({planning=true}){Text("AI 拆解、调整与分工")};Text("前置依赖用于提示，可以提前领取、执行和提交。",style=MaterialTheme.typography.bodySmall)
@@ -66,8 +66,8 @@ internal suspend fun taskWorkspaceMembers(repository:ClientRepository,base:Strin
  if(task!=null){Text("分工与依赖分别保存，服务端会校验最新版本与依赖环。",style=MaterialTheme.typography.bodySmall)}
 }
 
-@Composable private fun TaskWorkspaceDetail(repository:ClientRepository,project:String,id:String,graph:JsonObject?,me:JsonObject?,members:List<JsonObject>,refresh:Int,onChanged:()->Unit){
- val base=twBase(project);val path="$base/tasks/${Uri.encode(id)}";var task by remember(id){mutableStateOf<JsonObject?>(null)};var error by remember{mutableStateOf<String?>(null)};var tab by rememberSaveable(id){mutableStateOf("work")}
+@Composable private fun TaskWorkspaceDetail(repository:ClientRepository,project:String,id:String,graph:JsonObject?,me:JsonObject?,members:List<JsonObject>,refresh:Int,initialAction:String?,onChanged:()->Unit){
+ val base=twBase(project);val path="$base/tasks/${Uri.encode(id)}";var task by remember(id){mutableStateOf<JsonObject?>(null)};var error by remember{mutableStateOf<String?>(null)};var tab by rememberSaveable(id){mutableStateOf(initialAction?:"work")}
  LaunchedEffect(id,refresh,repository.accountId){try{task=repository.get(path);error=null}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}}
  error?.let{Text(it,color=MaterialTheme.colorScheme.error)};val row=task?:return
  Text(row.twText("title"),style=MaterialTheme.typography.titleLarge);Text(twState(row));NativeMarkdown(row.twText("detail"));Text("验收标准",style=MaterialTheme.typography.titleMedium);NativeMarkdown(row.twText("criteria"));Text("预计投入：${row.twText("effortHours")} 小时");if(row.twText("dueDate").isNotEmpty())Text("期限：${row.twText("dueDate")}");TaskWorkspaceDependencies(row,graph?.twRows().orEmpty())
@@ -78,7 +78,7 @@ internal suspend fun taskWorkspaceMembers(repository:ClientRepository,base:Strin
  "inquiries"->TaskInquiriesScreen(repository,project,id)
  "comments"->TaskWorkspaceComments(repository,base,id)
  "history"->TaskWorkspaceSubmissions(repository,base,row,manage,refresh,onChanged)
- "assistance"->{TaskWorkspaceAssistance(repository,base,row);TaskWorkspacePrompt(repository,base,row) /* TaskBridgeWorkspace is attached by integration owner. */ }
+ "assistance"->{TaskWorkspaceAssistance(repository,base,row);TaskWorkspacePrompt(repository,base,row);TaskBridgeWorkspace(repository,project,id)}
  else->{var filesBusy by remember{mutableStateOf(false)};var filesRefresh by remember{mutableIntStateOf(0)};if(row.twText("assigneeId").isBlank()&&row.twText("lifecycleState")=="open")TaskWorkspaceAction(repository,"领取任务","$path/claim",revisionBody,onSuccess={onChanged()});val canSubmit=row.twText("assigneeId")==repository.accountId&&row.twText("lifecycleState") in listOf("in_progress","improve","rework");TaskWorkspaceFiles(repository,project,id,canSubmit,{filesBusy=it},{filesRefresh++});if(canSubmit)TaskWorkspaceSubmit(repository,base,row,filesBusy,filesRefresh,onChanged);TaskWorkspaceSubmissions(repository,base,row,manage,refresh,onChanged)}
  }
 }

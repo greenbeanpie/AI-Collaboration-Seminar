@@ -16,10 +16,10 @@ import cn.buwei.nativeapp.data.NativeDraftStore
 import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
 
-@Composable fun SupportWorkspace(repository:ClientRepository){
+@Composable fun SupportWorkspace(repository:ClientRepository,initialTicketId:String?=null){
  val owner=repository.accountId;val epoch=remember(owner){repository.epoch};val scope=rememberCoroutineScope();val recovery=remember(repository){NativeDraftStore(repository)}
  var title by remember(owner){mutableStateOf("")};var body by remember(owner){mutableStateOf("")};var urgency by remember(owner){mutableStateOf("normal")};var category by remember(owner){mutableStateOf("other")};var images by remember(owner){mutableStateOf(JsonArray(emptyList()))};var savedTicket by remember(owner){mutableStateOf("")};var uncertain by remember(owner){mutableStateOf(false)};var loaded by remember(owner){mutableStateOf(false)}
- var tickets by remember(owner){mutableStateOf<List<JsonObject>>(emptyList())};var cursor by remember(owner){mutableStateOf<String?>(null)};var filter by remember(owner){mutableStateOf("")};var active by remember(owner){mutableStateOf<String?>(null)};var busy by remember{mutableStateOf(false)};var error by remember{mutableStateOf<String?>(null)};var confirmation by remember{mutableStateOf<String?>(null)}
+ var tickets by remember(owner){mutableStateOf<List<JsonObject>>(emptyList())};var cursor by remember(owner){mutableStateOf<String?>(null)};var filter by remember(owner){mutableStateOf("")};var active by remember(owner,epoch,initialTicketId){mutableStateOf(initialTicketId)};var busy by remember{mutableStateOf(false)};var error by remember{mutableStateOf<String?>(null)};var confirmation by remember{mutableStateOf<String?>(null)}
  fun recoveryValue()=buildJsonObject{put("title",title);put("body",body);put("urgency",urgency);put("category",category);put("images",images);put("savedTicket",savedTicket);put("uncertain",uncertain)}
  suspend fun persist(){recovery.save("support-create",recoveryValue(),owner?:error("请登录"),epoch)}
  suspend fun loadTickets(more:Boolean){val previous=if(more)cursor else null;val page=repository.networkJson("GET","/api/v1/support/tickets?limit=20"+(if(filter.isBlank())""else"&status=$filter")+(previous?.let{"&cursor="+Uri.encode(it)}?:""),expectedOwner=owner,expectedEpoch=epoch);val next=page.text("nextCursor").takeIf{it.isNotBlank()};check(next==null||next!=previous){"分页未前进，请重新读取"};tickets=notificationWorkspaceMerge(if(more)tickets else emptyList(),(page["items"]as? JsonArray).orEmpty().map{it.jsonObject});cursor=next}

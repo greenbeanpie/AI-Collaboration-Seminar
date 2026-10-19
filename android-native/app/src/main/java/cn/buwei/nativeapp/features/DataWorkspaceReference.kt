@@ -12,9 +12,12 @@ import cn.buwei.nativeapp.media.AttachmentActions
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.*
 
-@Composable internal fun DataWorkspaceReference(repository:ClientRepository,project:String,type:String,version:String){
- var open by remember(version){mutableStateOf(false)};OutlinedButton({open=!open}){Text("资料目录、搜索与原文定位")};if(!open)return
+@Composable internal fun DataWorkspaceReference(repository:ClientRepository,project:String,type:String,version:String,initiallyOpen:Boolean=false,initialPage:Int?=null){
+ var open by remember(version){mutableStateOf(initiallyOpen)};OutlinedButton({open=!open}){Text("资料目录、搜索与原文定位")};if(!open)return
  val path="${twBase(project)}/resource-index/$type/$version";var query by remember(version){mutableStateOf("")};var applied by remember(version){mutableStateOf("")};var offset by remember(version){mutableIntStateOf(0)};var index by remember(version){mutableStateOf<JsonObject?>(null)};var section by remember(version){mutableStateOf<JsonObject?>(null)};var readOffset by remember(version){mutableIntStateOf(0)};var detail by remember(version){mutableStateOf<JsonObject?>(null)};var refresh by remember{mutableIntStateOf(0)};var error by remember{mutableStateOf<String?>(null)}
+ var locatorMessage by remember(version,initialPage){mutableStateOf<String?>(null)}
+ LaunchedEffect(path,initialPage){if(initialPage!=null){val owner=repository.accountId;val epoch=repository.epoch;try{var start=0;while(true){val page=repository.networkJson("GET","$path?offset=$start",expectedOwner=owner,expectedEpoch=epoch);val match=page.twRows().firstOrNull{it["pageNumber"]?.jsonPrimitive?.intOrNull==initialPage};if(match!=null){offset=start;section=match;locatorMessage="已定位引用原文件第 $initialPage 页";break};val next=page["nextOffset"]?.jsonPrimitive?.intOrNull;if(next==null){locatorMessage="固定版本中未找到第 $initialPage 页的正文，请核对目录及原文件";break};check(next>start){"目录分页未前进"};start=next}}catch(e:CancellationException){throw e}catch(e:Exception){locatorMessage=e.message}}}
+ locatorMessage?.let{Text(it,style=MaterialTheme.typography.bodySmall)}
  TaskWorkspaceField("资料内搜索",query,{query=it},200);Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){OutlinedButton({applied=query.trim();offset=0;section=null}){Text("搜索原文")};TextButton({query="";applied="";offset=0;section=null}){Text("返回目录")}}
  LaunchedEffect(path,offset,applied,refresh){try{index=repository.get(path+(if(applied.isBlank())"?offset=$offset"else"/search?offset=$offset&query=${Uri.encode(applied)}"));error=null}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}}
  LaunchedEffect(path,section?.twText("sectionId"),readOffset){val item=section;if(item!=null)try{detail=repository.get("$path/section?sectionId=${Uri.encode(item.twText("sectionId"))}&offset=$readOffset&neighbors=true");error=null}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}}

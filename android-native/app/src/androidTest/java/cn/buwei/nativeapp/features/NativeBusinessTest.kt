@@ -37,7 +37,8 @@ class NativeBusinessTest {
  private val task="22222222-2222-4222-8222-222222222222"
  private val material="33333333-3333-4333-8333-333333333333"
  private val draftId="44444444-4444-4444-8444-444444444444"
- private val userId="55555555-5555-4555-8555-555555555555"
+ private val sourceVersion="66666666-6666-4666-8666-666666666666"
+ private val userId=UUID.randomUUID().toString()
  private val user get()=buildJsonObject{put("id",userId);put("username","native-fixture");put("displayName","Native fixture");put("isAdmin",false);put("role","user")}
  private val received=AtomicReference<JsonObject?>(null)
  private val observedRequests=ConcurrentLinkedQueue<String>()
@@ -51,7 +52,7 @@ class NativeBusinessTest {
  private fun taskFixture()=buildJsonObject{put("taskId",task);put("title","Fixture task");put("detail","Task detail fixture");put("status","todo");put("revision",1);put("criteria","fixture criteria");put("dependsOnTaskIds",JsonArray(kotlin.collections.emptyList()))}
  private fun richDoc()=Json.parseToJsonElement("""{"type":"doc","attrs":{"retain":"root"},"content":[{"type":"paragraph","attrs":{"retain":"block"},"content":[{"type":"text","text":"body before","marks":[{"type":"bold"}]}]},{"type":"citation","attrs":{"sourceVersionId":"fixed-version","locator":"p3"}},{"type":"futureNode","payload":{"keep":true}}]}""").jsonObject
  private fun materialFixture()=buildJsonObject{put("materialId",material);put("title","Fixture material");put("kind","document");put("revision",1);put("canEdit",true);put("currentVersion",buildJsonObject{put("versionId","fixed-version");put("doc",richDoc());put("markdown","body before");put("attachments",JsonArray(kotlin.collections.emptyList()))})}
- private fun draftFixture()=buildJsonObject{put("id",draftId);put("revision",if(preview)2 else 1);put("status","active");put("payload",payload);put("previewState",if(preview)"ready"else"idle");put("preview",if(preview)buildJsonObject{put("mode","manual");put("tasks",JsonArray(kotlin.collections.emptyList()))}else JsonNull)}
+ private fun draftFixture()=buildJsonObject{put("id",draftId);put("revision",if(preview)2 else 1);if(preview)put("previewRevision",2);put("status","active");put("payload",payload);put("previewState",if(preview)"ready"else"idle");put("preview",if(preview)buildJsonObject{put("mode","manual");put("tasks",JsonArray(kotlin.collections.emptyList()))}else JsonNull)}
 
  @Before fun setup(){
   context=InstrumentationRegistry.getInstrumentation().targetContext
@@ -65,6 +66,18 @@ class NativeBusinessTest {
    if(method=="GET"&&route=="/api/v1/projects/$project")return envelope(projectFixture())
    if(method=="GET"&&route=="/api/v1/projects/$project/tasks")return envelope(buildJsonObject{put("items",buildJsonArray{add(taskFixture())});put("nextCursor",JsonNull)})
    if(method=="GET"&&route=="/api/v1/projects/$project/tasks/$task")return envelope(taskFixture())
+   if(method=="GET"&&route=="/api/v1/projects/$project/tasks/graph")return envelope(buildJsonObject{put("items",buildJsonArray{add(taskFixture())});put("memberIds",buildJsonArray{add(userId)});put("graphRevision",1)})
+   if(method=="GET"&&route=="/api/v1/projects/$project/members/me")return envelope(buildJsonObject{put("userId",userId);put("role","owner");put("permissions",projectFixture().obj("permissions"))})
+   if(method=="GET"&&route=="/api/v1/projects/$project/members")return envelope(emptyList())
+   if(method=="GET"&&route=="/api/v1/projects/$project/tasks/$task/files")return envelope(emptyList())
+   if(method=="GET"&&route=="/api/v1/projects/$project/tasks/$task/submissions")return envelope(emptyList())
+   if(method=="GET"&&route.startsWith("/api/v1/projects/$project/resource-library")){
+    val resource=buildJsonObject{put("resourceId",material);put("resourceType","material");put("title","Fixture material");put("purpose","output");put("revision",1)}
+    return envelope(if(route.endsWith("/material/$material"))resource else buildJsonObject{put("items",buildJsonArray{add(resource)});put("nextCursor",JsonNull)})
+   }
+   if(method=="GET"&&route=="/api/v1/projects/$project/materials/$material/versions")return envelope(emptyList())
+   if(method=="GET"&&route=="/api/v1/projects/$project/resource-index/source/$sourceVersion")return envelope(buildJsonObject{put("indexStatus","ready");put("coverage","complete");put("items",buildJsonArray{add(buildJsonObject{put("sectionId","page-three");put("heading","固定第三页");put("pageNumber",3)})});put("nextOffset",JsonNull)})
+   if(method=="GET"&&route=="/api/v1/projects/$project/resource-index/source/$sourceVersion/section")return envelope(buildJsonObject{put("sectionId","page-three");put("text","页三固定原文");put("nextOffset",JsonNull)})
    if(method=="GET"&&route=="/api/v1/projects/$project/materials")return envelope(buildJsonObject{put("items",buildJsonArray{add(materialFixture())});put("nextCursor",JsonNull)})
    if(method=="GET"&&route=="/api/v1/projects/$project/materials/$material")return envelope(materialFixture())
    if(method=="POST"&&route=="/api/v1/projects/$project/offline-sync"){
@@ -97,28 +110,43 @@ class NativeBusinessTest {
   assertEquals(listOf("projectId","taskId"),pathParameterNames("/api/v1/projects/{projectId}/tasks/{taskId}"))
   val selected=AtomicReference<String?>(null)
   compose.setContent{cn.buwei.nativeapp.NativeTheme{Surface(Modifier.fillMaxSize()){FeatureScreen(repository,"projects",null,{selected.set(it)},{})}}}
-  awaitText("Fixture project");compose.onNodeWithText("打开项目").performScrollTo().performClick()
+  awaitText("Fixture project");compose.onNodeWithText("进入项目").performScrollTo().performClick()
   compose.waitUntil{selected.get()==project};screenshot("projects")
  }
  @Test fun taskListLoadsNativeDetail(){
   compose.setContent{cn.buwei.nativeapp.NativeTheme{Surface(Modifier.fillMaxSize()){FeatureScreen(repository,"tasks",project,{},{})}}}
-  awaitText("Fixture task");compose.onNodeWithText("查看详情").performScrollTo().performClick()
-  awaitText("任务内容：Task detail fixture");screenshot("task-detail")
+  awaitText("Fixture task");compose.onNodeWithText("查看与处理").performScrollTo().performClick()
+  awaitText("Task detail fixture");screenshot("task-detail")
  }
  @Test fun richEditorSavesTextAndRetainsReferencesAndMarks(){
   compose.setContent{cn.buwei.nativeapp.NativeTheme{Surface(Modifier.fillMaxSize()){FeatureScreen(repository,"data",project,{},{})}}}
-  compose.onNodeWithText("成果材料").performScrollTo().performClick();awaitText("Fixture material")
-  compose.onNodeWithText("查看详情").performScrollTo().performClick();awaitText("编辑正文")
+  awaitText("Fixture material")
+  compose.onNodeWithText("查看资料").performScrollTo().performClick();awaitText("编辑正文")
   compose.onNodeWithText("编辑正文").performScrollTo().performClick();compose.onNode(hasText("body before") and hasSetTextAction()).performScrollTo().performTextReplacement("body after");closeSoftKeyboard()
   screenshot("rich-editor");compose.onNodeWithText("保存新版本").performScrollTo().performClick()
   compose.waitUntil(15000){received.get()!=null}
   val save=received.get()!!.obj("body");assertEquals(richDoc().toString().replace("body before","body after"),save.obj("doc").toString());assertFalse(save.containsKey("markdown"));assertEquals(1,save["expectedRevision"]!!.jsonPrimitive.int)
   awaitText("已保存新版本")
  }
+ @Test fun taskLinkOpensTheExactNativeDetail(){
+  val destination=cn.buwei.nativeapp.nativeDestination("/app/projects/$project/tasks?task=$task")!!
+  compose.setContent{cn.buwei.nativeapp.NativeTheme{Surface(Modifier.fillMaxSize()){FeatureScreen(repository,destination.section,destination.projectId,{},{},destination)}}}
+  awaitText("Task detail fixture")
+  assertTrue(observedRequests.contains("GET /api/v1/projects/$project/tasks/$task"))
+  compose.onNodeWithText("返回任务列表").assertExists()
+ }
+ @Test fun sourceCitationOpensItsFixedVersionAndActualPage(){
+  val destination=cn.buwei.nativeapp.nativeDestination("/app/projects/$project/data?resourceType=source&resourceId=$material&sourceVersionId=$sourceVersion&page=3")!!
+  compose.setContent{cn.buwei.nativeapp.NativeTheme{Surface(Modifier.fillMaxSize()){FeatureScreen(repository,destination.section,destination.projectId,{},{},destination)}}}
+  awaitText("页三固定原文")
+  assertTrue(observedRequests.contains("GET /api/v1/projects/$project/resource-index/source/$sourceVersion/section"))
+  assertFalse(observedRequests.any{it=="GET /api/v1/projects/$project/materials/$material"})
+  compose.onNodeWithText("引用的固定版本 · 只读").performScrollTo().assertIsDisplayed()
+ }
  @Test fun creationDraftPreviewsThenCommitsOnlyAfterConfirmation(){
   val selected=AtomicReference<String?>(null)
   compose.setContent{cn.buwei.nativeapp.NativeTheme{Surface(Modifier.fillMaxSize()){ProjectCreationScreen(repository){selected.set(it)}}}}
-  compose.onNodeWithText("名称 *").performScrollTo().performTextInput("Fixture project");closeSoftKeyboard()
+  compose.onNodeWithText("项目名称").performScrollTo().performTextInput("Fixture project");closeSoftKeyboard()
   compose.onNodeWithText("保存创建草稿").performScrollTo().performClick();compose.onNodeWithText("确认").performClick()
   awaitText("生成手动预览");compose.onNodeWithText("生成手动预览").performScrollTo().performClick();compose.onNodeWithText("确认").performClick()
   awaitText("确认预览并创建项目");compose.onNodeWithText("确认预览并创建项目").performScrollTo().performClick();compose.onNodeWithText("确认").performClick()

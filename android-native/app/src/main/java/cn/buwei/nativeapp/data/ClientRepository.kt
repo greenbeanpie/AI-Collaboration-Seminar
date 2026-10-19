@@ -221,6 +221,19 @@ class ClientRepository(val context:Context,private val testOrigin:String?=null,n
         }
     }
     suspend fun pending():List<NativeDatabase.Operation> = withContext(Dispatchers.IO) { accountId?.let { store.operations(it) }?:emptyList() }
+    /** Called only after the user reviewed the latest material and retained their local draft. */
+    suspend fun acknowledgeMaterialConflict(id:String,path:String,owner:String,generation:Long)=gate.withLock {
+        assertOwner(owner,generation);val resolved=resolvePath(path)
+        require(OfflinePolicy.allowed("PUT",resolved)){"仅可核对材料正文冲突"}
+        withContext(Dispatchers.IO) {
+            val row=store.operation(owner,id)
+            if(row!=null){
+                check(row.path==resolved&&row.method=="PUT"&&row.state=="conflict"){"同步记录已变化，请重新核对"}
+                assertOwner(owner,generation);store.removeOperation(id,owner)
+            }
+        }
+        assertOwner(owner,generation)
+    }
     suspend fun discardOperation(id:String)=withContext(Dispatchers.IO) { accountId?.let { store.removeOperation(id,it) } }
     suspend fun reviseOperation(id:String,body:JsonObject)=withContext(Dispatchers.IO) {
         val row=pending().firstOrNull { it.id==id }?:error("草稿不存在")

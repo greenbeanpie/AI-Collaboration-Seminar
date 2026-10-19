@@ -27,7 +27,7 @@ internal fun rehearsalCreation(scope: String, member: String, materials: Set<Str
 private fun RehearsalAssessmentResult(repository: ClientRepository, projectId: String, rehearsalId: String, refresh: Int, canCorrect: Boolean, onChanged: () -> Unit, onConfirm: (String, suspend () -> Unit) -> Unit) {
     val base = assessmentBase(projectId); var assessment by remember(rehearsalId) { mutableStateOf<JsonObject?>(null) }; var standard by remember { mutableStateOf<JsonObject?>(null) }; var error by remember { mutableStateOf<String?>(null) }
     val owner = repository.accountId; val epoch = repository.epoch
-    LaunchedEffect(rehearsalId, refresh) { try { assessment = assessmentPages(repository, "$base/assessments?limit=50").firstOrNull { it.text("rehearsalId") == rehearsalId && !it.flag("historical") }; standard = repository.networkJson("GET", "$base/standards/current")["standard"] as? JsonObject } catch (e: CancellationException) { throw e } catch (e: Exception) { error = e.message } }
+    LaunchedEffect(rehearsalId, refresh) { try { val record = assessmentPages(repository, "$base/assessments?kind=rehearsal&limit=50").firstOrNull { it.text("rehearsalId") == rehearsalId && !it.flag("historical") }; assessment = record?.let {repository.networkJson("GET","$base/assessments/${Uri.encode(it.text("assessmentId"))}")}; standard = repository.networkJson("GET", "$base/standards/current")["standard"] as? JsonObject } catch (e: CancellationException) { throw e } catch (e: Exception) { error = e.message } }
     error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     assessment?.let { row ->
         Text("本轮答辩评分 · 标准 v${row.text("standardsVersion")} · 评分 r${row.text("revision")}", style = MaterialTheme.typography.titleMedium)
@@ -46,28 +46,36 @@ internal fun rehearsalCanAnswer(detail: JsonObject): Boolean {
 }
 
 @Composable
-fun RehearsalWorkspace(repository: ClientRepository, projectId: String) {
+fun RehearsalWorkspace(repository: ClientRepository, projectId: String, initialRehearsalId:String?=null, initialAssessmentId:String?=null) {
     val account by repository.account.collectAsState()
-    key(projectId, account?.text("id")) { RehearsalWorkspaceContent(repository, projectId) }
+    key(projectId, account?.text("id"), repository.epoch, initialRehearsalId, initialAssessmentId) { RehearsalWorkspaceContent(repository, projectId, initialRehearsalId, initialAssessmentId) }
 }
 
 @Composable
-private fun RehearsalWorkspaceContent(repository: ClientRepository, projectId: String) {
+private fun RehearsalWorkspaceContent(repository: ClientRepository, projectId: String, initialRehearsalId:String?, initialAssessmentId:String?) {
     val base = assessmentBase(projectId); val coroutineScope = rememberCoroutineScope(); val owner = repository.accountId; val epoch = repository.epoch
     var aiEnabled by remember { mutableStateOf(false) }; var scope by remember { mutableStateOf("all") }; var member by remember { mutableStateOf("") }; var materials by remember { mutableStateOf(emptySet<String>()) }; var sources by remember { mutableStateOf(emptySet<String>()) }
     var members by remember { mutableStateOf<List<JsonObject>>(emptyList()) }; var history by remember { mutableStateOf<List<JsonObject>>(emptyList()) }; var project by remember { mutableStateOf(JsonObject(emptyMap())) }; var detail by remember { mutableStateOf<JsonObject?>(null) }
-    var selected by remember { mutableStateOf("") }; var answer by remember { mutableStateOf("") }; var refresh by remember { mutableIntStateOf(0) }; var busy by remember { mutableStateOf(false) }; var voiceOpen by remember { mutableStateOf(false) }; var jobId by remember { mutableStateOf("") }; var error by remember { mutableStateOf<String?>(null) }; var confirm by remember { mutableStateOf<Pair<String, suspend () -> Unit>?>(null) }
+    var selected by remember { mutableStateOf(initialRehearsalId.orEmpty()) }; var answer by remember { mutableStateOf("") }; var refresh by remember { mutableIntStateOf(0) }; var busy by remember { mutableStateOf(false) }; var voiceOpen by remember { mutableStateOf(false) }; var jobId by remember { mutableStateOf("") }; var error by remember { mutableStateOf<String?>(null) }; var confirm by remember { mutableStateOf<Pair<String, suspend () -> Unit>?>(null) }
+    var linkedAssessment by remember {mutableStateOf<JsonObject?>(null)}
+    LaunchedEffect(initialAssessmentId) {if(initialAssessmentId!=null)try {
+        val records=assessmentPages(repository,"$base/assessments?kind=rehearsal&limit=50")
+        val record=records.firstOrNull{it.text("assessmentId")==initialAssessmentId || it.text("rehearsalId")==initialAssessmentId}?:error("未找到有权访问的答辩记录")
+        linkedAssessment=repository.networkJson("GET","$base/assessments/${Uri.encode(record.text("assessmentId"))}")
+        selected=record.text("rehearsalId")
+    }catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}}
     suspend fun loadHistory() { history = assessmentPages(repository, "$base/rehearsals?limit=30") }
     LaunchedEffect(refresh) { try { aiEnabled = repository.networkJson("GET", "/api/v1/capabilities").obj("features").flag("aiEnabled"); project = repository.networkJson("GET", base); members = assessmentPages(repository, "$base/members"); loadHistory(); error = null } catch (e: CancellationException) { throw e } catch (e: Exception) { error = e.message } }
     LaunchedEffect(selected, refresh, voiceOpen) { if (detail?.text("rehearsalId") != selected) detail = null; if (selected.isNotBlank() && !voiceOpen) while (isActive) { try { detail = repository.networkJson("GET", "$base/rehearsals/${Uri.encode(selected)}"); error = null; if (detail?.text("status") != "active") break } catch (e: CancellationException) { throw e } catch (e: Exception) { error = e.message; break }; delay(4000L) } }
     fun action(block: suspend () -> Unit) { if (busy) return; busy = true; error = null; coroutineScope.launch { try { block(); refresh++ } catch (e: CancellationException) { throw e } catch (e: Exception) { error = (e.message ?: "请求失败") + "；请刷新核对，当前草稿保留，不会自动重放。" } finally { busy = false } } }
     suspend fun send(method: String, tail: String, body: JsonObject? = null): JsonObject { check(repository.accountId == owner && repository.epoch == epoch); return repository.requestDurably("rehearsal:$projectId:$tail", method, base + tail, body) }
     AssessmentDraft(repository, "rehearsal-answer:$projectId:$selected", buildJsonObject { put("answer", answer) }, restore = { answer = it.text("answer") }, failure = { error = it })
-    AssessmentDraft(repository, "rehearsal-selection:$projectId", buildJsonObject { put("scope", scope); put("member", member); put("selected", selected); put("materials", JsonArray(materials.map(::JsonPrimitive))); put("sources", JsonArray(sources.map(::JsonPrimitive))) }, restore = { saved -> scope = saved.text("scope").ifBlank { "all" }; member = saved.text("member"); selected = saved.text("selected"); materials = (saved["materials"] as? JsonArray).orEmpty().map { it.jsonPrimitive.content }.toSet(); sources = (saved["sources"] as? JsonArray).orEmpty().map { it.jsonPrimitive.content }.toSet() }, failure = { error = it })
+    AssessmentDraft(repository, "rehearsal-selection:$projectId", buildJsonObject { put("scope", scope); put("member", member); put("selected", selected); put("materials", JsonArray(materials.map(::JsonPrimitive))); put("sources", JsonArray(sources.map(::JsonPrimitive))) }, restore = { saved -> scope = saved.text("scope").ifBlank { "all" }; member = saved.text("member"); if(initialRehearsalId==null&&initialAssessmentId==null)selected = saved.text("selected"); materials = (saved["materials"] as? JsonArray).orEmpty().map { it.jsonPrimitive.content }.toSet(); sources = (saved["sources"] as? JsonArray).orEmpty().map { it.jsonPrimitive.content }.toSet() }, failure = { error = it })
     if (voiceOpen && selected.isNotBlank()) {
         Column(Modifier.fillMaxSize()) { TextButton({ voiceOpen = false; refresh++ }) { Text("返回文字演练与历史") }; Box(Modifier.weight(1f)) { VoiceWorkspace(repository, projectId, selected) } }
     } else Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("答辩演练", style = MaterialTheme.typography.headlineSmall)
+        if(selected.isBlank())linkedAssessment?.let{Text("引用的历史答辩评分",style=MaterialTheme.typography.titleMedium);AssessmentReport(it.obj("report"))}
         Text("围绕固定目标、标准和资料进行真实问答。只有明确确认的创建、回答和结束操作会调用模型。", style = MaterialTheme.typography.bodySmall)
         TextButton({ refresh++ }, enabled = !busy) { Text("刷新演练与历史") }; error?.let { Text(it, color = MaterialTheme.colorScheme.error) }; if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         AssessmentChoice("演练范围", scope, listOf("all" to "全体答辩", "member" to "指定成员")) { scope = it }
