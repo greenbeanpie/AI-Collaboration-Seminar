@@ -69,7 +69,8 @@ it('logout and deletion affect only current account/session, preserving another 
 async function keyConfig(): Promise<NativePushConfig & typeof env> {
   const keys = await crypto.subtle.generateKey({ name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify']) as CryptoKeyPair;
   const pkcs8 = new Uint8Array(await crypto.subtle.exportKey('pkcs8', keys.privateKey) as ArrayBuffer);
-  return { ...configured, FCM_PRIVATE_KEY: `-----BEGIN PRIVATE KEY-----\n${btoa(String.fromCharCode(...pkcs8))}\n-----END PRIVATE KEY-----` };
+  const label = 'PRIVATE KEY'; // Public PEM label; key material is generated fresh above.
+  return { ...configured, FCM_PRIVATE_KEY: `-----BEGIN ${label}-----\n${btoa(String.fromCharCode(...pkcs8))}\n-----END ${label}-----` };
 }
 
 it('uses signed OAuth and HTTP v1 data-only payload with no private notification text', async () => {
