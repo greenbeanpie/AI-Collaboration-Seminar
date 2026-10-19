@@ -33,4 +33,19 @@
     <ProjectReference Include="../Core/Buwei.Windows.Core.csproj" />
     <Content Update="Assets/icon.ico" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+  <!-- The unpackaged MRT Core path generates the app PRI but does not publish it.
+       See microsoft/WindowsAppSDK#6720. Keep compiled XAML beside its index. -->
+  <Target Name="PublishNativeXamlResources" BeforeTargets="ComputeResolvedFilesToPublishList" DependsOnTargets="$(GenerateProjectPriFile)">
+    <Error Condition="!Exists('$(ProjectPriFullPath)')" Text="The application PRI was not generated; native XAML cannot be published safely." />
+    <ItemGroup>
+      <ResolvedFileToPublish Include="$(ProjectPriFullPath)">
+        <RelativePath>$(ProjectPriFileName)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+      <ResolvedFileToPublish Include="$(TargetDir)App.xbf">
+        <RelativePath>App.xbf</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
 </Project>

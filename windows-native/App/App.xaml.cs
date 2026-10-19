@@ -8,7 +8,25 @@ public partial class App : Application
 {
     private MainWindow? window;
     private Mutex? instance;
-    public App() { InitializeComponent(); }
+    public App()
+    {
+        UnhandledException += (_, args) => RecordFailure(args.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (_, args) => RecordFailure(args.ExceptionObject as Exception);
+        InitializeComponent();
+    }
+    internal static void RecordFailure(Exception? error)
+    {
+        try
+        {
+            var folder = Path.Combine(Path.GetTempPath(), "Buwei.Windows.Native.Diagnostics");
+            Directory.CreateDirectory(folder);
+            var path = Path.Combine(folder, "startup-errors.log");
+            if (File.Exists(path) && new FileInfo(path).Length > 256 * 1024) File.Delete(path);
+            File.AppendAllText(path, DateTimeOffset.UtcNow.ToString("O") + "\n" + error + "\n");
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
     protected override async void OnLaunched(LaunchActivatedEventArgs args)
     {
         var channel = Environment.GetCommandLineArgs().Contains("--benchmark") ? ".Benchmark" : "";
