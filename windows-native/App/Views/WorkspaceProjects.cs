@@ -19,7 +19,7 @@ public sealed partial class WorkspaceView
             await AddPagedAsync(records, "/projects?limit=20&status=" + state.Value() + "&q=" + Escape(search.Text.Trim()), item =>
                 Ui.Card(Ui.Label(item.Text("name"), 21), Ui.Label(item.Text("description")),
                     Ui.Label((item.Text("myRole") == "owner" ? "负责人" : "项目成员") + " · " + Ui.Status(item.Text("status")) + " · " + (item.Text("deadlineDate") is { Length: > 0 } date ? "截止 " + date : "截止待确认")),
-                    Action("进入项目", () => OpenProjectAsync(item.Text("id")), primary: true)), token);
+                    Action("进入项目", () => OpenProjectAsync(item.Text("id")), primary: true)), token, virtualize: true);
         }
         panel.Children.Add(Ui.Card(search, state, Action("搜索", SearchAsync)));
         panel.Children.Add(records);

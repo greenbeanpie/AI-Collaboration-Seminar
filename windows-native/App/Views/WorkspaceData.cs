@@ -20,7 +20,7 @@ public sealed partial class WorkspaceView
         var archived = new CheckBox { Content = "查看已归档资料" }; var list = Ui.Stack();
         async Task SearchAsync()
         {
-            list.Children.Clear(); await AddPagedAsync(list, Base + "/resource-library?limit=50&q=" + Escape(query.Text.Trim()) + "&archived=" + (archived.IsChecked == true ? "true" : "false") + (purpose.Value().Length > 0 ? "&purpose=" + purpose.Value() : ""), row => Ui.Card(Ui.Label(row.Text("title"), 20), Ui.Label((row.Text("resourceType") == "source" ? "来源原文" : "成果文档") + " · " + row.Text("updatedAt")), Action("查看资料", () => ReplaceAsync(ct => ResourceAsync(row.Text("resourceType"), row.Text("resourceId"), ct)))), token);
+            list.Children.Clear(); await AddPagedAsync(list, Base + "/resource-library?limit=50&q=" + Escape(query.Text.Trim()) + "&archived=" + (archived.IsChecked == true ? "true" : "false") + (purpose.Value().Length > 0 ? "&purpose=" + purpose.Value() : ""), row => Ui.Card(Ui.Label(row.Text("title"), 20), Ui.Label((row.Text("resourceType") == "source" ? "来源原文" : "成果文档") + " · " + row.Text("updatedAt")), Action("查看资料", () => ReplaceAsync(ct => ResourceAsync(row.Text("resourceType"), row.Text("resourceId"), ct)))), token, virtualize: true);
         }
         panel.Children.Add(Ui.Card(query, purpose, archived, Action("搜索", SearchAsync))); panel.Children.Add(list); await SearchAsync(); return panel;
     }

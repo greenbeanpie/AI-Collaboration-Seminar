@@ -18,7 +18,7 @@ public sealed partial class WorkspaceView
         {
             records.Children.Clear();
             var path = Base + "/tasks?limit=50&q=" + Escape(query.Text.Trim()) + (filter.Value().Length > 0 ? "&lifecycleState=" + filter.Value() : "") + (mine.IsChecked == true ? "&assigneeId=" + Escape(repository.AccountId!) : "");
-            await AddPagedAsync(records, path, task => Ui.Card(Ui.Label(task.Text("title"), 20), Ui.Label(Ui.Status(task.Text("lifecycleState"))), Ui.Label("截止 " + (task.Text("dueDate") is { Length: > 0 } due ? due : "待确认")), Action("查看与处理", () => ReplaceAsync(ct => TaskDetailAsync(task.Text("taskId"), ct)))), token);
+            await AddPagedAsync(records, path, task => Ui.Card(Ui.Label(task.Text("title"), 20), Ui.Label(Ui.Status(task.Text("lifecycleState"))), Ui.Label("截止 " + (task.Text("dueDate") is { Length: > 0 } due ? due : "待确认")), Action("查看与处理", () => ReplaceAsync(ct => TaskDetailAsync(task.Text("taskId"), ct)))), token, virtualize: true);
         }
         panel.Children.Add(Ui.Card(query, filter, mine, Action("搜索", SearchAsync))); panel.Children.Add(records); await SearchAsync();
         return panel;

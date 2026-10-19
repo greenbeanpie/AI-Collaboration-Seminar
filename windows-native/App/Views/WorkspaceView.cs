@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using Buwei.Windows.Core;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using System.Collections.ObjectModel;
 
 namespace Buwei.Windows.Views;
 
@@ -162,10 +163,17 @@ public sealed partial class WorkspaceView : UserControl
     }
     private async Task<JsonNode?> WriteAsync(string method, string path, JsonNode? body = null, bool offline = false)
     { var result = await repository.SendAsync(method, path, body, offline, PageToken); StatusChanged?.Invoke("请求已处理，请以页面刷新后的服务端状态为准。"); return result; }
-    private async Task AddPagedAsync(StackPanel parent, string path, Func<JsonNode, UIElement> row, CancellationToken token)
+    private async Task AddPagedAsync(StackPanel parent, string path, Func<JsonNode, UIElement> row, CancellationToken token, bool virtualize = false)
     {
         var list = new StackPanel { Spacing = 12 };
-        parent.Children.Add(list);
+        var models = new ObservableCollection<JsonNode>();
+        ScrollViewer? viewport = null;
+        if (virtualize)
+        {
+            var repeater = new ItemsRepeater { ItemsSource = models, ItemTemplate = new NativeRowFactory(row), Layout = new StackLayout { Spacing = 12 } };
+            viewport = Ui.Scroll(repeater); viewport.Padding = new Thickness(0); viewport.Height = 180; parent.Children.Add(viewport);
+        }
+        else parent.Children.Add(list);
         var more = Ui.Button("加载更多", () => Task.CompletedTask);
         string? cursor = null;
         var seenCursors = new HashSet<string>(); var seenRows = new HashSet<string>();
@@ -176,8 +184,9 @@ public sealed partial class WorkspaceView : UserControl
             var next = page.Text("nextCursor");
             if (next.Length > 0 && !seenCursors.Add(next)) throw new InvalidOperationException("分页游标重复，请刷新页面后重试。");
             var rows = page.Rows();
-            foreach (var item in rows) { var id = item.Id("id", "taskId", "resourceId", "userId", "materialId", "assessmentId", "reviewId", "standardId", "sessionId"); if (id.Length == 0 || seenRows.Add(id)) list.Children.Add(row(item)); }
-            if (list.Children.Count == 0) list.Children.Add(Ui.Label("当前没有记录。"));
+            foreach (var item in rows) { var id = item.Id("id", "taskId", "resourceId", "userId", "materialId", "assessmentId", "reviewId", "standardId", "sessionId"); if (id.Length == 0 || seenRows.Add(id)) { if (virtualize) models.Add(item); else list.Children.Add(row(item)); } }
+            if (viewport != null) { viewport.Height = Math.Min(640, Math.Max(180, models.Count * 150)); if (models.Count == 0) { viewport.Visibility = Visibility.Collapsed; parent.Children.Add(Ui.Label("当前没有记录。")); } }
+            else if (list.Children.Count == 0) list.Children.Add(Ui.Label("当前没有记录。"));
             cursor = next.Length == 0 ? null : next;
             more.Visibility = cursor == null ? Visibility.Collapsed : Visibility.Visible;
         }
