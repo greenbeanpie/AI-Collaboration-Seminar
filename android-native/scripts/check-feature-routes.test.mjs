@@ -42,6 +42,14 @@ test('unknown prefixes and state-derived URLs remain unverified and cannot satis
  assert.throws(()=>assertRouteReport(report),/only 0 verified bindings/);
 });
 
+test('question marks inside Kotlin interpolation are not mistaken for URL query delimiters',()=>{
+ const report=analyze('repository.get("/api/v1/users/${Uri.encode(user?.id)}/profile?cursor=$unknown")',{'/api/v1/users/{userId}':{get:{}}});
+ assert.equal(report.verified.length,0);assert.equal(report.invalid.length,1);
+ assert.match(report.invalid[0].path,/\/profile$/);
+ const encoded=analyze('repository.get("/api/v1/files/" + Uri.encode("a/b?c") + "/content")',{'/api/v1/files/{fileId}/content':{get:{}}});
+ assert.equal(encoded.invalid.length,0);assert.equal(encoded.verified.length,1);
+});
+
 test('same-named base variables are resolved in their own lexical scopes',()=>{
  const report=analyze(`fun alpha(){val base="/api/v1/alpha";repository.get("$base/items")}
  fun beta(){val base="/api/v1/beta";repository.request("POST","$base/items")}`,

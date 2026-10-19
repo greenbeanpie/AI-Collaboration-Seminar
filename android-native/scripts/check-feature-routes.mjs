@@ -63,7 +63,7 @@ export function analyzeRoutes(sources,spec){
    const sums=split(tokens,start,end,'+');if(sums.length>1){let result='';for(const part of sums){const value=evaluate(part,query);if(!isValue(value))return value;result+=value;if(query&&result.includes('?'))return result.split('?')[0];}return result;}
    const first=tokens[start];if(first.kind==='string'&&start+1===end)return literal(first.text,query);if(first.kind==='id'&&start+1===end)return identifier(first.text,query);
    let open=start;while(open<end&&tokens[open].text!=='(')open++;if(open<end&&tokens[open].pair===end-1){const name=tokens[open-1].text;const args=split(tokens,open+1,end-1);
-    if(name==='encode'&&tokens.slice(start,open).map(t=>t.text).join('')==='Uri.encode'){const value=evaluate(args[0],false);return isValue(value)?value:'{encodedSegment}';}
+    if(name==='encode'&&tokens.slice(start,open).map(t=>t.text).join('')==='Uri.encode'){const value=evaluate(args[0],false);return isValue(value)?(/^\{[^{}]+\}$/.test(value)?value:encodeURIComponent(value)):'{encodedSegment}';}
     if(name==='resolvePath'){const value=evaluate(args[0],query);return isValue(value)?normalize(value):value;}
     const fn=selectFunction(name,file,position);if(fn?.expression){const env=bindArguments(fn,args,file,position,bindings,depth+1);return evaluator(fn.file,fn.body,env,depth+1,seen).evaluate(fn.expression,query);}
    }return unknown('dynamic expression or branch');
@@ -74,7 +74,7 @@ export function analyzeRoutes(sources,spec){
    const global=constants.filter(v=>v.name===name);if(global.length===1)return evaluator(global[0].file,global[0].start,bindings,depth+1,nextSeen).evaluate(global[0].expression,query);return unknown(`unresolved variable ${name}`);
   }
   function literal(raw,query){
-   const triple=raw.startsWith('"""');let value=raw.slice(triple?3:1,triple?-3:-1);if(query)value=value.split('?')[0];let result='';
+   const triple=raw.startsWith('"""');let value=raw.slice(triple?3:1,triple?-3:-1);if(query){for(let q=0;q<value.length;q++){if(value[q]==='\\'){q++;continue;}if(value[q]==='$'&&value[q+1]==='{'){q=interpolationEnd(value,q+2);continue;}if(value[q]==='?'){value=value.slice(0,q);break;}}}let result='';
    for(let i=0;i<value.length;){if(value[i]==='\\'){const escape=value[i+1];result+=({n:'\n',r:'\r',t:'\t'}[escape]??escape??'');i+=2;continue;}if(value[i]!=='$'){result+=value[i++];continue;}
     if(value[i+1]==='{'){const end=interpolationEnd(value,i+2);const expression=value.slice(i+2,end);const fragment=parseFile(`${file.name}:interpolation`,expression);let resolved;
      if(/^Uri\.encode\(/.test(expression.trim()))resolved='{encodedSegment}';else if(/^[A-Za-z_]\w*$/.test(expression.trim())){resolved=identifier(expression.trim(),false);if(!isValue(resolved)&&uuidName(expression.trim()))resolved=`{${expression.trim()}}`;}else resolved=evaluator(fragment,fragment.tokens.length,bindings,depth+1,seen).evaluate([0,fragment.tokens.length],false);
