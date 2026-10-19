@@ -15,7 +15,7 @@
 
 服务端通过 Workers Web Crypto 签署 RS256 服务账户断言，兑换短时 OAuth token，再调用 FCM HTTP v1。缓存只包含 OAuth 凭据，事件权限、会话和通知偏好每次派发都重新查询。网络调用各自限时 10 秒。
 
-FCM 仅携带 `eventId`、`userId`，使用 data-only 消息和 60 秒 TTL；不携带标题、正文、资源链接或业务内容。应用检查当前本地账户后显示固定通用文案，并保存最近 256 个事件 ID 去重。点击通过显式 MainActivity Intent 的 `notificationEventId` / `notificationAccountId` 进入；业务层必须先验证当前会话与通知列表中的事件访问权，才能打开具体资源。
+FCM 仅携带 `eventId`、`userId`，使用 data-only 消息和 60 秒 TTL；不携带标题、正文、资源链接或业务内容。冷进程先恢复本机账户，再在线验证当前会话与消息账户一致后显示固定通用文案，并保存最近 256 个事件 ID 去重。回调等待最多 8 秒，避免回调返回后服务停止取消验证；离线、验证超时和本机安全存储损坏均停止展示并记录明确的应用状态，不重置凭据或把缓存账户当成已验证会话。点击通过显式 MainActivity Intent 的 `notificationEventId` / `notificationAccountId` 进入；业务层必须先验证当前会话与通知列表中的事件访问权，才能打开具体资源。
 
 无效 token 仅在 FCM 明确返回 `UNREGISTERED` 时停用。缺失 Firebase 项目不被当成设备过期；网络失败和 429/5xx 按现有 outbox 退避策略重试。
 
