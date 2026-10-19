@@ -1,0 +1,18 @@
+package cn.buwei.nativeapp.features
+
+import org.junit.Assert.*
+import org.junit.Test
+import java.io.File
+import java.security.MessageDigest
+
+class HelpWorkspaceContractTest {
+ private fun asset(name:String)=File("src/main/assets/$name")
+ private fun sourceRoot():File=generateSequence(File(".").canonicalFile){it.parentFile}.first{File(it,"frontend/src/help/USER-GUIDE.md").isFile}
+ @Test fun bundledDocumentsMatchAllThreeWebSourcesByteForByte(){assertEquals(listOf("user","technical","database"),helpWorkspaceSources.map{it.key});val root=sourceRoot();helpWorkspaceSources.forEach{source->val bundled=asset(source.assetName).readBytes();val web=File(root,"frontend/src/help/${source.filename}").readBytes();assertArrayEquals(source.filename,web,bundled);val hash=MessageDigest.getInstance("SHA-256").digest(bundled).joinToString(""){"%02x".format(it)};assertEquals(source.sha256,hash);assertEquals(web.toString(Charsets.UTF_8),source.content{asset(it).inputStream()})}}
+ @Test fun completeSchemaDictionaryAndTechnicalGuideRemainAvailable(){val user=helpWorkspaceSources.first{it.key=="user"};val technical=helpWorkspaceSources.first{it.key=="technical"};val database=helpWorkspaceSources.first{it.key=="database"};assertTrue(helpWorkspaceChapters(user.content{asset(it).inputStream()},"user").sections.size>8);assertTrue(technical.content{asset(it).inputStream()}.contains("projectToolConversation"));assertTrue(helpWorkspaceChapters(database.content{asset(it).inputStream()},"database").sections.size>70)}
+ @Test fun chapterParserIgnoresFencedHeadingsAndHasReachableUniqueIds(){val parsed=helpWorkspaceChapters("# Title\nIntro\n## First\n```text\n## code heading\n```\n## Second\nBody","user");assertEquals("Intro",parsed.intro);assertEquals(listOf("First","Second"),parsed.sections.map{it.title});assertEquals(listOf("user-section-1","user-section-2"),parsed.sections.map{it.id});assertTrue(parsed.sections[0].content.contains("## code heading"))}
+ @Test fun searchFiltersByHeadingOrBodyAndSupportsClearing(){val sections=listOf(HelpWorkspaceChapter("a","Task flow","Body"),HelpWorkspaceChapter("b","Other","DATABASE example"));assertEquals(listOf("b"),helpWorkspaceSearch(sections," database ").map{it.id});assertEquals(sections,helpWorkspaceSearch(sections,""));assertTrue(helpWorkspaceSearch(sections,"missing-keyword-xyz").isEmpty())}
+ @Test fun codeIndentationAndHtmlRemainLiteralText(){val blocks=helpWorkspaceBlocks("```sql\nSELECT id\n  FROM jobs;\n<script>literal</script>\n```\n3. Third\n4. Fourth");assertEquals("code",blocks.first().kind);assertEquals("SELECT id\n  FROM jobs;\n<script>literal</script>",blocks.first().text);assertEquals("3. Third",blocks[1].text);assertEquals("4. Fourth",blocks[2].text)}
+ @Test fun tablesBecomeReadableLabeledNativeRows(){val blocks=helpWorkspaceBlocks("| Field | Detail |\n| --- | --- |\n| name | Text |\n| state | Ready |");assertEquals(2,blocks.size);assertEquals(listOf("Field","Detail"),blocks.first().labels);assertEquals(listOf("name","Text"),blocks.first().cells)}
+ @Test fun linksRejectExecutableCredentialAndEscapedTraversalTargets(){listOf("javascript:alert(1)","file:///private","https://user:password@example.test/","//external.test/","/app/%2e%2e/api/token","/app/%5c%5cexternal","/app/%00bad").forEach{assertNull(it,helpWorkspaceLink(it))};assertEquals("/app/support",helpWorkspaceLink("/app/support"));assertEquals("https://example.test/guide",helpWorkspaceLink("https://example.test/guide"));assertEquals("http://example.test/guide",helpWorkspaceLink("http://example.test/guide"))}
+}
