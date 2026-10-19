@@ -16,6 +16,7 @@ public static partial class ClientPaths
         return path.StartsWith("/api/v1/", StringComparison.Ordinal) ? path : "/api/v1" + path;
     }
     public static string? Project(string path) => ProjectPattern().Match(path) is { Success: true } match ? match.Groups[1].Value : null;
+    public static string? ResourceIndexScope(string path) => ResourceIndexPattern().Match(path) is { Success: true } match ? match.Groups[1].Value : null;
     public static bool Writable(string method, string path)
     {
         if (path.Contains('?')) return false;
@@ -39,5 +40,6 @@ public static partial class ClientPaths
         return parts[0] + (query.Length == 0 ? "" : "?" + string.Join('&', query));
     }
     [GeneratedRegex("^/api/v1/projects/([a-zA-Z0-9-]+)(?:/|\\?|$)")] private static partial Regex ProjectPattern();
+    [GeneratedRegex("^(/api/v1/projects/[a-zA-Z0-9-]+/resource-index/(?:source|material)/[a-zA-Z0-9-]+)(?:/|\\?|$)")] private static partial Regex ResourceIndexPattern();
     [GeneratedRegex("^/api/v1/projects/[a-zA-Z0-9-]+/(.+)$")] private static partial Regex TailPattern();
 }

@@ -340,6 +340,124 @@ tests.Add(("Bridge HTTP throttling remains uncertain while explicit version reje
     f.Handler.Route = _ => Task.FromResult(Error(409)); await Reject(() => f.Repository.RetryBridgeRequestExplicitlyAsync(intent.Id, true));
     Equal((await f.Store.PendingBridgeRequestsAsync()).Count, 0);
 }));
+tests.Add(("Prepared fixed source directory and every section continuation open on first offline entry", async () =>
+{
+    using var f = new Fixture(); await f.Login(); var reads = new List<Request>();
+    f.Handler.Route = request => { reads.Add(request); return Task.FromResult(Reply(OfflineFixture.Data(request))); };
+    var prepared = await f.Repository.PrepareProjectAsync(Project);
+    Equal(prepared.Sections, 2); Equal(prepared.PartialResources, 0); True(prepared.Endpoints >= 18);
+    Equal((await f.Store.ReadSnapshotAsync(Root + "/offline-ready"))?.Data?["state"]?.ToString(), "text-ready");
+    True(reads.All(x => x.Method == "GET"));
+    f.Handler.Route = _ => throw new HttpRequestException("offline");
+    Equal((await f.Repository.GetAsync(OfflineFixture.Index + "?offset=0"))?["items"]?[0]?["sectionId"]?.ToString(), OfflineFixture.Section);
+    Equal((await f.Repository.GetAsync(OfflineFixture.Index + "?offset=20"))?["items"]?[0]?["sectionId"]?.ToString(), "second");
+    Equal((await f.Repository.GetAsync(OfflineFixture.Index + "/section?neighbors=true&offset=6000&sectionId=" + Uri.EscapeDataString(OfflineFixture.Section)))?["fragments"]?[0]?["quote"]?.ToString(), "原文续读");
+    True(f.Repository.LastReadOffline);
+}));
+tests.Add(("Offline preparation reports incomplete index and coverage rather than full readiness", async () =>
+{
+    using var f = new Fixture(); await f.Login();
+    f.Handler.Route = request => { var data = OfflineFixture.Data(request); if (request.Path == OfflineFixture.Index) { data["indexStatus"] = "building"; data["coverage"] = "partial"; } return Task.FromResult(Reply(data)); };
+    var prepared = await f.Repository.PrepareProjectAsync(Project); Equal(prepared.PartialResources, 1);
+    Equal((await f.Store.ReadSnapshotAsync(Root + "/offline-ready"))?.Data?["state"]?.ToString(), "partial");
+}));
+tests.Add(("Offline preparation rejects repeated offsets and lifecycle changes without readiness", async () =>
+{
+    using var f = new Fixture(); await f.Login();
+    foreach (var invalid in new[] { "directory", "section", "revision" })
+    {
+        f.Handler.Route = request =>
+        {
+            var data = OfflineFixture.Data(request);
+            if (invalid == "directory" && request.Path == OfflineFixture.Index) data["nextOffset"] = 0;
+            if (invalid == "section" && request.Path == OfflineFixture.Index + "/section") data["nextOffset"] = 0;
+            if (invalid == "revision" && request.Path == OfflineFixture.Index && OfflineFixture.Query(request).GetValueOrDefault("offset") == "20") data["revision"] = 2;
+            return Task.FromResult(Reply(data));
+        };
+        await Reject(() => f.Repository.PrepareProjectAsync(Project));
+        Equal((await f.Store.ReadSnapshotAsync(Root + "/offline-ready"))?.Data?["state"]?.ToString(), "preparing");
+    }
+}));
+tests.Add(("Wrong-version resource response never overwrites previously valid offline snapshot", async () =>
+{
+    using var f = new Fixture(); await f.Login(); var path = OfflineFixture.Index + "?offset=0";
+    await f.Store.SaveSnapshotAsync(path, new JsonObject { ["versionId"] = OfflineFixture.Version, ["marker"] = "preserve" });
+    f.Handler.Route = request => { var data = OfflineFixture.Data(request); if (request.Path == OfflineFixture.Index) data["versionId"] = "88888888-8888-4888-8888-888888888888"; return Task.FromResult(Reply(data)); };
+    await Reject(() => f.Repository.PrepareProjectAsync(Project));
+    Equal((await f.Store.ReadSnapshotAsync(path))?.Data?["marker"]?.ToString(), "preserve");
+}));
+tests.Add(("Offline preparation enforces text request page budgets and cancellation without stale ready state", async () =>
+{
+    using var f = new Fixture(); await f.Login();
+    f.Handler.Route = request => Task.FromResult(Reply(OfflineFixture.Data(request)));
+    foreach (var limit in new[] { new OfflinePreparationLimits(MaxBytes: 1), new OfflinePreparationLimits(MaxRequests: 3), new OfflinePreparationLimits(MaxPages: 1) })
+    {
+        await f.Store.SaveSnapshotAsync(Root + "/offline-ready", new JsonObject { ["state"] = "text-ready" });
+        await Reject(() => f.Repository.PrepareProjectAsync(Project, limits: limit));
+        Equal((await f.Store.ReadSnapshotAsync(Root + "/offline-ready"))?.Data?["state"]?.ToString(), "preparing");
+    }
+    using var cancellation = new CancellationTokenSource();
+    f.Handler.Route = request => { if (request.Path == Root + "/sources") cancellation.Cancel(); return Task.FromResult(Reply(OfflineFixture.Data(request))); };
+    await Reject(() => f.Repository.PrepareProjectAsync(Project, cancellation.Token));
+    Equal((await f.Store.ReadSnapshotAsync(Root + "/offline-ready"))?.Data?["state"]?.ToString(), "preparing");
+}));
+tests.Add(("Membership revocation during index preparation removes cached project and blocks local writes", async () =>
+{
+    using var f = new Fixture(); await f.Login(); await f.Store.EnqueueAsync("offline-revocation", "PATCH", TaskPath, new JsonObject { ["title"] = "local" });
+    var revoked = false;
+    f.Handler.Route = request =>
+    {
+        if (request.Path == OfflineFixture.Index) { revoked = true; return Task.FromResult(Error(403)); }
+        if (revoked && request.Path == Root) return Task.FromResult(Error(403));
+        return Task.FromResult(Reply(OfflineFixture.Data(request)));
+    };
+    await Reject(() => f.Repository.PrepareProjectAsync(Project)); True(await f.Store.IsRevokedAsync(Project));
+    Equal(await f.Store.ReadSnapshotAsync(Root), null); Equal(await f.Store.ReadSnapshotAsync(Root + "/offline-ready"), null);
+    Equal((await f.Store.WritesAsync()).Single().Status, "blocked");
+}));
+tests.Add(("Offline preparation includes fixed historical material versions not only current version", async () =>
+{
+    using var f = new Fixture(); await f.Login(); const string material = "99999999-9999-4999-8999-999999999999";
+    const string older = "88888888-8888-4888-8888-888888888888";
+    f.Handler.Route = request =>
+    {
+        JsonObject data;
+        if (request.Path == Root + "/sources") data = new() { ["items"] = new JsonArray(), ["nextCursor"] = null };
+        else if (request.Path == Root + "/materials") data = new() { ["items"] = new JsonArray(new JsonObject { ["materialId"] = material, ["currentVersionId"] = OfflineFixture.Version }), ["nextCursor"] = null };
+        else if (request.Path == Root + "/materials/" + material) data = new() { ["materialId"] = material, ["currentVersionId"] = OfflineFixture.Version };
+        else if (request.Path == Root + "/materials/" + material + "/versions") data = new() { ["items"] = new JsonArray(new JsonObject { ["versionId"] = older }, new JsonObject { ["versionId"] = OfflineFixture.Version }), ["nextCursor"] = null };
+        else if (request.Path.StartsWith(Root + "/materials/" + material + "/versions/", StringComparison.Ordinal)) data = new() { ["versionId"] = request.Path.Split('/').Last(), ["markdown"] = "fixed historical text" };
+        else if (request.Path.StartsWith(Root + "/resource-index/material/", StringComparison.Ordinal)) data = new() { ["resourceType"] = "material", ["versionId"] = request.Path.Split('/').Last(), ["resourceId"] = material, ["revision"] = 1, ["coverage"] = "ready", ["indexStatus"] = "ready", ["items"] = new JsonArray(), ["nextOffset"] = null };
+        else data = OfflineFixture.Data(request);
+        return Task.FromResult(Reply(data));
+    };
+    await f.Repository.PrepareProjectAsync(Project); f.Handler.Route = _ => throw new HttpRequestException("offline");
+    Equal((await f.Repository.GetAsync(Root + "/materials/" + material + "/versions/" + older))?["markdown"]?.ToString(), "fixed historical text");
+}));
+tests.Add(("Known denied fixed resource purges its cached directory and sections but preserves drafts and other versions", async () =>
+{
+    using var f = new Fixture(); await f.Login();
+    await f.Store.SaveSnapshotAsync(OfflineFixture.Index + "?offset=0", new JsonObject { ["text"] = "previous" });
+    await f.Store.SaveSnapshotAsync(OfflineFixture.Index + "/section?sectionId=old&offset=0&neighbors=true", new JsonObject { ["text"] = "previous text" });
+    var other = OfflineFixture.Index + "8?offset=0"; await f.Store.SaveSnapshotAsync(other, new JsonObject { ["text"] = "other version" });
+    await f.Store.SaveDraftAsync("preserved-document", new JsonObject { ["text"] = "my draft" });
+    f.Handler.Route = request => Task.FromResult(request.Path == Root ? Reply(new JsonObject { ["projectId"] = Project }) : Error(403));
+    await Reject(() => f.Repository.GetFreshAsync(OfflineFixture.Index + "/section?sectionId=old&offset=0&neighbors=true"));
+    Equal(await f.Store.ReadSnapshotAsync(OfflineFixture.Index + "?offset=0"), null);
+    Equal(await f.Store.ReadSnapshotAsync(OfflineFixture.Index + "/section?sectionId=old&offset=0&neighbors=true"), null);
+    Equal((await f.Store.ReadSnapshotAsync(other))?.Data?["text"]?.ToString(), "other version");
+    Equal((await f.Store.LoadDraftAsync("preserved-document"))?["text"]?.ToString(), "my draft"); True(!await f.Store.IsRevokedAsync(Project));
+}));
+tests.Add(("Offline preparation cannot retain stale original text after a fixed index becomes unavailable", async () =>
+{
+    using var f = new Fixture(); await f.Login();
+    var oldPath = OfflineFixture.Index + "/section?sectionId=old&offset=0&neighbors=true";
+    await f.Store.SaveSnapshotAsync(oldPath, new JsonObject { ["text"] = "obsolete original" });
+    f.Handler.Route = request => Task.FromResult(request.Path == OfflineFixture.Index ? Error(404) : Reply(OfflineFixture.Data(request)));
+    var result = await f.Repository.PrepareProjectAsync(Project); Equal(result.PartialResources, 1);
+    Equal(await f.Store.ReadSnapshotAsync(oldPath), null); True(!await f.Store.IsRevokedAsync(Project));
+    Equal((await f.Store.ReadSnapshotAsync(Root + "/offline-ready"))?.Data?["state"]?.ToString(), "partial");
+}));
 var failed = 0;
 foreach (var (name, run) in tests)
 {
@@ -357,12 +475,12 @@ static async Task Until(Func<Task<bool>> check) { for (var i = 0; i < 200; i++) 
 static HttpResponseMessage Reply(JsonNode data) => new(HttpStatusCode.OK) { Content = new StringContent(new JsonObject { ["data"] = data }.ToJsonString(), Encoding.UTF8, "application/json") };
 static HttpResponseMessage Error(int status) => new((HttpStatusCode)status) { Content = new StringContent(new JsonObject { ["error"] = new JsonObject { ["code"] = "SYNTHETIC", ["message"] = "synthetic failure" } }.ToJsonString(), Encoding.UTF8, "application/json") };
 
-sealed record Request(string Method, string Path, string? Key, string? Body);
+sealed record Request(string Method, string Path, string? Key, string? Body, string Query = "");
 sealed class Handler : HttpMessageHandler
 {
     public Func<Request, Task<HttpResponseMessage>> Route { get; set; } = _ => throw new InvalidOperationException("Unexpected HTTP request");
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
-        await Route(new(request.Method.Method, request.RequestUri!.AbsolutePath, request.Headers.TryGetValues("Idempotency-Key", out var keys) ? keys.Single() : null, request.Content == null ? null : await request.Content.ReadAsStringAsync(cancellationToken)));
+        await Route(new(request.Method.Method, request.RequestUri!.AbsolutePath, request.Headers.TryGetValues("Idempotency-Key", out var keys) ? keys.Single() : null, request.Content == null ? null : await request.Content.ReadAsStringAsync(cancellationToken), request.RequestUri.Query));
 }
 sealed class Fixture : IDisposable
 {

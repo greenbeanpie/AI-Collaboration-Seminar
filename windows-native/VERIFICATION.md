@@ -2,7 +2,7 @@
 
 本轮交付是可构建、可打包的 WinUI 原生迁移预览，**不是完整业务对等或正式发布验收**。专用界面已覆盖主要业务领域，但 [UI-COVERAGE.md](docs/UI-COVERAGE.md) 列出的缺口仍未完成。[MIGRATION_MATRIX.md](docs/MIGRATION_MATRIX.md) 是后续验收门槛。
 
-以下安装产物与性能数字对应冻结的 **0.1.0 / 8225036c**。后续 **0.1.1 源码**增加了任务 Bridge 闭环及持久在线请求，新增验证见 [Bridge 验证记录](docs/BRIDGE-VERIFICATION.md)；当前源码比已生成的 0.1.0 安装包更新，不能把旧包的性能或窗口证据自动用于新源码。
+以下安装产物与性能数字对应冻结的 **0.1.0 / 8225036c**。后续 **0.1.1 源码**增加了任务 Bridge 闭环、持久在线请求及原文离线准备，新增验证见 [Bridge 验证记录](docs/BRIDGE-VERIFICATION.md)和[离线准备验证](docs/OFFLINE-VERIFICATION.md)；当前源码比已生成的 0.1.0 安装包更新，不能把旧包的性能或窗口证据自动用于新源码。
 
 ## 改动范围
 

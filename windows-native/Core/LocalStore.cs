@@ -151,6 +151,11 @@ public sealed partial class LocalStore : IDisposable
         return await cmd.ExecuteNonQueryAsync();
     });
     public Task<bool> IsRevokedAsync(string project) => UseAsync(async c => { using var cmd = Command(c, "SELECT count(*) FROM revoked WHERE project=$p", ("$p", project)); return (long)(await cmd.ExecuteScalarAsync())! != 0; });
+    internal Task<int> PurgeSnapshotScopeAsync(string scope) => UseAsync(async c =>
+    {
+        using var command = Command(c, "DELETE FROM snapshots WHERE path=$p OR substr(path,1,length($p)+1)=$p||'/' OR substr(path,1,length($p)+1)=$p||'?'", ("$p", scope));
+        return await command.ExecuteNonQueryAsync();
+    });
     public async Task RestoreAccessAsync(string project) => await UseAsync(async c => { using var cmd = Command(c, "DELETE FROM revoked WHERE project=$p", ("$p", project)); return await cmd.ExecuteNonQueryAsync(); });
     public void Dispose() { lock (gate) disposed = true; }
 }

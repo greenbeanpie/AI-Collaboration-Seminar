@@ -67,7 +67,7 @@ public sealed class MainWindow : Window
         bar.Children.Add(new TextBlock { Text = "补位", FontSize = 22, Margin = new Thickness(0, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center });
         bar.Children.Add(Button("同步与冲突", SynchronizeAsync)); bar.Children.Add(Button("保存项目供离线使用", PrepareAsync));
         bar.Children.Add(Button("录制与恢复", CaptureAsync)); bar.Children.Add(Button("检查更新", () => UpdateAsync(true)));
-        bar.Children.Add(Button("取消文件传输", () => { transferStop.Cancel(); retiredTransfers.Add(transferStop); transferStop = new(); SetStatus("已请求停止文件传输，已保存的断点保留"); return Task.CompletedTask; }));
+        bar.Children.Add(Button("取消传输与离线准备", () => { transferStop.Cancel(); retiredTransfers.Add(transferStop); transferStop = new(); SetStatus("已请求停止传输与离线准备，已有断点和缓存保留"); return Task.CompletedTask; }));
         var theme = new ComboBox { ItemsSource = new[] { "跟随系统", "浅色", "深色" }, SelectedIndex = 0, MinWidth = 110 };
         theme.SelectionChanged += (_, _) => layout.RequestedTheme = theme.SelectedIndex switch { 1 => ElementTheme.Light, 2 => ElementTheme.Dark, _ => ElementTheme.Default };
         bar.Children.Add(theme);
@@ -221,8 +221,8 @@ public sealed class MainWindow : Window
     private async Task PrepareAsync()
     {
         var project = workspace?.CurrentProjectId ?? throw new InvalidOperationException("请先打开一个项目");
-        using var busy = activity.Enter("离线准备"); await repository.PrepareProjectAsync(project);
-        SetStatus("已保存项目概览、任务、成果和资料元信息；原文分节及其他页面需在线打开后缓存，原文件需另外下载");
+        using var busy = activity.Enter("离线准备"); var result = await repository.PrepareProjectAsync(project, transferStop.Token);
+        SetStatus($"已保存 {result.Endpoints} 个入口及 {result.Sections} 个原文分节；{(result.PartialResources == 0 ? "本次文本范围已准备" : $"另有 {result.PartialResources} 个版本的原文准备未完整完成")}。原文件需另外下载，其他业务页面仍需事先在线打开");
     }
     private NativeTransfers Transfers() => new(repository.Http, Path.Combine(AccountDirectory(), "files"), activity);
     private async Task AddFileAsync()

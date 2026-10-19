@@ -104,7 +104,7 @@ public sealed partial class ClientRepository : IDisposable
                 await Store.SaveSnapshotAsync(path, data); Guard(started);
                 if (ClientPaths.Project(path) is { } project && path == "/api/v1/projects/" + project) await Store.RestoreAccessAsync(project);
             }
-            return await OverlayAsync(path, data);
+            var visible = await OverlayAsync(path, data); Guard(started); return visible;
         }
         catch (Exception ex) when (allowCache && (ex is HttpRequestException || ex is TaskCanceledException && !ct.IsCancellationRequested))
         {
@@ -115,7 +115,7 @@ public sealed partial class ClientRepository : IDisposable
             if (snapshot == null) throw new InvalidOperationException("此内容尚未保存到本机，首次打开需要联网", ex);
             LastReadOffline = true; LastSnapshotAt = snapshot.SavedAt;
             StatusChanged?.Invoke("本机缓存版本 · " + snapshot.SavedAt.ToLocalTime().ToString("g"));
-            return await OverlayAsync(path, snapshot.Data);
+            var visible = await OverlayAsync(path, snapshot.Data); Guard(started); return visible;
         }
         catch (ApiException ex) when (ex.Status is 403 or 404 && ClientPaths.Project(path) is { } project)
         {
@@ -123,6 +123,8 @@ public sealed partial class ClientRepository : IDisposable
             // Only a project-root refusal establishes lost membership; action denials do not.
             try { await NetworkAsync("GET", "/api/v1/projects/" + project, null, null, ct); }
             catch (ApiException root) when (root.Status is 403 or 404) { Guard(started); await Store.RevokeAsync(project); }
+            Guard(started);
+            if (ClientPaths.ResourceIndexScope(path) is { } scope) await Store.PurgeSnapshotScopeAsync(scope);
             throw;
         }
     }
@@ -233,10 +235,13 @@ public sealed partial class ClientRepository : IDisposable
     }
     private async Task<JsonNode?> OverlayAsync(string path, JsonNode? data)
     {
-        var view = data?.DeepClone();
-        foreach (var row in await Store.WritesAsync())
+        var account = AccountId; var writes = await Store.WritesAsync();
+        return await Task.Run(() =>
         {
-            if (row.AccountId != AccountId || row.Status == "blocked") continue;
+        var view = data?.DeepClone();
+        foreach (var row in writes)
+        {
+            if (row.AccountId != account || row.Status == "blocked") continue;
             var body = JsonNode.Parse(row.Body);
             if (path == row.Path && row.Method is "PATCH" or "PUT" && view is JsonObject obj && body is JsonObject fields)
             {
@@ -245,6 +250,7 @@ public sealed partial class ClientRepository : IDisposable
             }
         }
         return view;
+        });
     }
     public void Dispose() { Http.Dispose(); syncing.Dispose(); Store.Dispose(); }
     private sealed class RequestLease : IDisposable
@@ -253,16 +259,43 @@ public sealed partial class ClientRepository : IDisposable
         public RequestLease(ClientRepository repository) { owner = repository; Interlocked.Increment(ref repository.activeRequests); }
         public void Dispose() { var repository = Interlocked.Exchange(ref owner, null); if (repository != null) Interlocked.Decrement(ref repository.activeRequests); }
     }
-    public async Task PrepareProjectAsync(string projectId, CancellationToken ct = default)
+    public async Task<OfflinePreparation> PrepareProjectAsync(string projectId, CancellationToken ct = default, OfflinePreparationLimits? limits = null)
     {
         if (!Guid.TryParse(projectId, out _)) throw new ArgumentException("项目标识无效");
+        limits ??= new(); limits.Validate();
         var started = epoch; if (AccountId == null) throw new InvalidOperationException("请先登录");
         var root = "/api/v1/projects/" + projectId;
-        async Task<JsonNode?> Load(string path)
+        var cached = new HashSet<string>(); var partial = new Dictionary<string, string>(); var preparedSections = new HashSet<string>();
+        var attempted = 0; long received = 0;
+        await Store.SaveSnapshotAsync(root + "/offline-ready", new JsonObject { ["scope"] = "project-text-v2", ["state"] = "preparing" }); Guard(started);
+        async Task<JsonNode?> Read(string path)
+        {
+            Guard(started); ct.ThrowIfCancellationRequested();
+            if (attempted >= limits.MaxRequests) throw new InvalidDataException("离线准备达到接口数量上限，已有缓存保留，本次未完成。");
+            attempted++;
+            StatusChanged?.Invoke($"离线准备：累计读取接口 {attempted} 次（含失败尝试），已保存 {cached.Count} 个入口");
+            return await NetworkAsync("GET", path, null, null, ct);
+        }
+        async Task<JsonNode?> Load(string path, Func<JsonNode?, bool>? accepts = null)
         {
             Guard(started);
-            var data = await NetworkAsync("GET", path, null, null, ct); Guard(started);
-            await Store.SaveSnapshotAsync(path, data); Guard(started); return data;
+            JsonNode? data;
+            try { data = await Read(path); }
+            catch (ApiException error) when (error.Status is 403 or 404)
+            {
+                Guard(started);
+                if (path == root) { await Store.RevokeAsync(projectId); throw; }
+                try { await Read(root); }
+                catch (ApiException refusal) when (refusal.Status is 403 or 404) { Guard(started); await Store.RevokeAsync(projectId); throw; }
+                throw;
+            }
+            Guard(started);
+            received += await Task.Run(() => System.Text.Encoding.UTF8.GetByteCount(data?.ToJsonString() ?? "null"), ct); Guard(started);
+            if (received > limits.MaxBytes) throw new InvalidDataException("离线准备达到文本容量上限，已有缓存保留，本次未完成。");
+            if (accepts != null && !accepts(data)) throw new InvalidDataException("接口响应与固定离线入口不一致。");
+            await Store.SaveSnapshotAsync(path, data); Guard(started); cached.Add(ClientPaths.SnapshotKey(path));
+            if (path == root) { await Store.RestoreAccessAsync(projectId); Guard(started); }
+            return data;
         }
         async Task<List<JsonNode>> List(string path, int limit = 100)
         {
@@ -270,12 +303,68 @@ public sealed partial class ClientRepository : IDisposable
             var basis = path + (path.Contains('?') ? "&" : "?") + "limit=" + limit;
             do
             {
-                var data = await Load(basis + (cursor == null ? "" : "&cursor=" + Uri.EscapeDataString(cursor)));
+                var data = await Load(basis + (cursor == null ? "" : "&cursor=" + Uri.EscapeDataString(cursor)), x => x?["items"] is JsonArray);
                 foreach (var row in data?["items"]?.AsArray() ?? []) if (row != null) all.Add(row.DeepClone());
                 cursor = data?["nextCursor"]?.GetValue<string>();
-                if (cursor != null && (!seen.Add(cursor) || seen.Count >= 200)) throw new InvalidDataException("离线准备分页未正常前进");
+                if (cursor != null && (!seen.Add(cursor) || seen.Count >= limits.MaxPages)) throw new InvalidDataException("离线准备分页未正常前进或达到分页上限。");
             } while (cursor != null);
             return all;
+        }
+        async Task PrepareIndex(string type, string version)
+        {
+            if (!Guid.TryParse(version, out _)) throw new InvalidDataException("固定资料版本标识无效。");
+            var path = root + "/resource-index/" + type + "/" + version;
+            var sections = new HashSet<string>(); var offset = 0; var directoryOffsets = new HashSet<int>(); JsonNode? baseline = null;
+            try
+            {
+                do
+                {
+                    if (!directoryOffsets.Add(offset) || directoryOffsets.Count > limits.MaxPages) throw new InvalidDataException("资料目录分页未前进或达到上限。");
+                    var directory = await Load(path + "?offset=" + offset, x => x?["items"] is JsonArray && x["versionId"]?.ToString() == version && x["resourceType"]?.ToString() == type && x["revision"] is JsonValue revision && revision.TryGetValue<int>(out var value) && value > 0 && (baseline == null || JsonNode.DeepEquals(baseline, x["revision"])));
+                    if (directory?["items"] is not JsonArray entries || directory["versionId"]?.ToString() != version || directory["resourceType"]?.ToString() != type)
+                        throw new InvalidDataException("资料目录与固定版本不一致。");
+                    if (baseline != null && !JsonNode.DeepEquals(baseline, directory["revision"])) throw new InvalidDataException("资料生命周期在离线准备中发生变化，请刷新后重试。");
+                    baseline ??= directory["revision"]?.DeepClone();
+                    if (directory["indexStatus"]?.ToString() != "ready" || directory["coverage"]?.ToString() is not ("ready" or "complete" or "full"))
+                        partial[type + "/" + version] = "索引或原文覆盖尚未完成";
+                    foreach (var entry in entries)
+                    {
+                        var section = entry?["sectionId"]?.ToString();
+                        if (string.IsNullOrEmpty(section) || section.Length > 200) throw new InvalidDataException("原文分节标识无效。");
+                        sections.Add(section);
+                    }
+                    if (directory["nextOffset"] == null) break;
+                    var next = directory["nextOffset"]!.GetValue<int>();
+                    if (next <= offset || next > 1_000_000) throw new InvalidDataException("资料目录分页未前进。");
+                    offset = next;
+                } while (true);
+                foreach (var section in sections)
+                {
+                    var readOffsets = new HashSet<int>(); offset = 0;
+                    do
+                    {
+                        if (!readOffsets.Add(offset) || readOffsets.Count > limits.MaxPages) throw new InvalidDataException("原文续读未前进或达到上限。");
+                        var content = await Load(path + "/section?sectionId=" + Uri.EscapeDataString(section) + "&offset=" + offset + "&neighbors=true", x => x?["versionId"]?.ToString() == version && x["resourceType"]?.ToString() == type && x["sectionId"]?.ToString() == section && JsonNode.DeepEquals(baseline, x["revision"]));
+                        if (content?["versionId"]?.ToString() != version || content["resourceType"]?.ToString() != type || content["sectionId"]?.ToString() != section || !JsonNode.DeepEquals(baseline, content["revision"]))
+                            throw new InvalidDataException("原文与固定资料版本或生命周期不一致。");
+                        if (content["text"] == null && content["fragments"] is not JsonArray) throw new InvalidDataException("原文响应缺少正文或片段。");
+                        if (content["nextOffset"] == null) break;
+                        var next = content["nextOffset"]!.GetValue<int>();
+                        if (next <= offset || next > 1_000_000) throw new InvalidDataException("原文续读未前进。"); offset = next;
+                    } while (true);
+                    preparedSections.Add(type + "/" + version + "/" + section);
+                }
+            }
+            catch (ApiException error) when (error.Status is 403 or 404 or 409)
+            {
+                Guard(started); if (await Store.IsRevokedAsync(projectId)) throw;
+                if (error.Status is 403 or 404)
+                {
+                    await Store.PurgeSnapshotScopeAsync(path); Guard(started);
+                    cached.RemoveWhere(x => x == path || x.StartsWith(path + "/", StringComparison.Ordinal) || x.StartsWith(path + "?", StringComparison.Ordinal));
+                }
+                partial[type + "/" + version] = error.Message;
+            }
         }
         await Load(root); await Load(root + "/members/me"); await Load(root + "/tasks/graph"); await Load(root + "/goal");
         await List("/api/v1/projects?status=active&q=", 20); await List(root + "/members");
@@ -291,8 +380,12 @@ public sealed partial class ClientRepository : IDisposable
         foreach (var material in materials)
         {
             var id = material["materialId"]?.GetValue<string>(); if (id == null) continue;
-            await Load(root + "/materials/" + id); await List(root + "/materials/" + id + "/versions", 30);
-            if (material["currentVersionId"]?.GetValue<string>() is { } version) await Load(root + "/materials/" + id + "/versions/" + version);
+            await Load(root + "/materials/" + id); var versions = await List(root + "/materials/" + id + "/versions", 30);
+            var ids = versions.Select(x => x["versionId"]?.ToString()).Append(material["currentVersionId"]?.ToString()).Where(x => !string.IsNullOrEmpty(x)).Distinct();
+            foreach (var version in ids)
+            {
+                await Load(root + "/materials/" + id + "/versions/" + version); await PrepareIndex("material", version!);
+            }
         }
         var resources = await List(root + "/resource-library?q=&archived=false", 50);
         foreach (var resource in resources)
@@ -306,10 +399,24 @@ public sealed partial class ClientRepository : IDisposable
         {
             var id = source["sourceId"]?.GetValue<string>(); if (id == null) continue;
             await Load(root + "/sources/" + id);
-            if (source["currentVersionId"]?.GetValue<string>() is { } version) await Load(root + "/sources/" + id + "/versions/" + version);
+            if (source["currentVersionId"]?.GetValue<string>() is { } version)
+            {
+                await Load(root + "/sources/" + id + "/versions/" + version); await PrepareIndex("source", version);
+            }
         }
         Guard(started);
-        await Store.SaveSnapshotAsync(root + "/offline-ready", new JsonObject { ["preparedAt"] = DateTimeOffset.UtcNow.ToString("O"), ["scope"] = "project-text-v1" });
+        await Store.SaveSnapshotAsync(root + "/offline-ready", new JsonObject { ["preparedAt"] = DateTimeOffset.UtcNow.ToString("O"), ["scope"] = "project-text-v2", ["state"] = partial.Count == 0 ? "text-ready" : "partial", ["cachedEndpoints"] = cached.Count, ["sections"] = preparedSections.Count,
+            ["incomplete"] = new JsonArray(partial.Select(x => (JsonNode?)new JsonObject { ["resource"] = x.Key, ["reason"] = x.Value }).ToArray()) }); Guard(started);
+        return new(cached.Count, preparedSections.Count, partial.Count, received);
+    }
+}
+
+public sealed record OfflinePreparation(int Endpoints, int Sections, int PartialResources, long TextBytes);
+public sealed record OfflinePreparationLimits(long MaxBytes = 128L * 1024 * 1024, int MaxRequests = 2000, int MaxPages = 200)
+{
+    internal void Validate()
+    {
+        if (MaxBytes is <= 0 or > 128L * 1024 * 1024 || MaxRequests is <= 0 or > 2000 || MaxPages is <= 0 or > 200) throw new ArgumentOutOfRangeException(nameof(MaxBytes), "离线准备额度超出支持范围。");
     }
 }
 
