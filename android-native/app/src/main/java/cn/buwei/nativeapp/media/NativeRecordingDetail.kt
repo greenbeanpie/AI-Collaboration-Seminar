@@ -28,6 +28,7 @@ import kotlinx.serialization.json.*
  val scope=rememberCoroutineScope();val lock=remember{Mutex()};val lifecycle=LocalLifecycleOwner.current.lifecycle
  var sessions by remember{mutableStateOf<List<JsonObject>>(emptyList())};var listCursor by remember{mutableStateOf<String?>(null)}
  var selected by remember{mutableStateOf<String?>(null)};var detail by remember{mutableStateOf<JsonObject?>(null)}
+ var loadedPages by remember{mutableIntStateOf(0)}
  var cursor by remember{mutableStateOf<String?>(null)};var seen by remember{mutableStateOf<Set<String>>(emptySet())}
  var busy by remember{mutableStateOf(false)};var retrying by remember{mutableStateOf(false)};var denied by remember{mutableStateOf(false)}
  var stale by remember{mutableStateOf(false)};var error by remember{mutableStateOf<String?>(null)};var confirm by remember{mutableStateOf(false)}
@@ -48,19 +49,35 @@ import kotlinx.serialization.json.*
   denied=false
  }
  suspend fun readDetail(more:Boolean=false,keepLoaded:Boolean=false){
-  val id=selected?:return;val previous=if(more)cursor else null
-  val result=get("$base/${Uri.encode(id)}?limit=50"+(previous?.let{"&cursor=${Uri.encode(it)}"}?:""))
-  check(result.text("sessionId")==id&&result.text("materialId")==materialId&&result["segments"] is JsonArray){"录制详情身份或片段响应不一致"}
-  val next=result.text("nextCursor").takeIf{it.isNotBlank()}
-  if(!keepLoaded)check(next==null||(next!=previous&&(!more||next !in seen))){"录制片段分页未前进"}
-  val segments=if(more||keepLoaded)(detail?.rows("segments").orEmpty()+result.rows("segments")).associateBy{it.text("sequence")}.values.sortedBy{it["sequence"]?.jsonPrimitive?.intOrNull?:0}else result.rows("segments")
-  detail=JsonObject(result+("segments" to JsonArray(segments)))
-  if(!keepLoaded){cursor=next;seen=if(more)seen+listOfNotNull(previous)else emptySet()}
+  val id=selected?:return
+  if(more&&cursor==null)return
+  val pageLimit=if(keepLoaded)loadedPages.coerceAtLeast(1)else 1
+  var requested=if(more)cursor else null
+  val visited=if(more)seen.toMutableSet()else mutableSetOf()
+  val records=mutableListOf<JsonObject>();var last:JsonObject?=null;var next:String?=null;var fetched=0
+  // Refresh only the number of pages already opened by the user; follow the current
+  // server cursor chain, never silently read all unknown recording segments.
+  while(fetched<pageLimit){
+   val result=get("$base/${Uri.encode(id)}?limit=50"+(requested?.let{"&cursor=${Uri.encode(it)}"}?:""))
+   if(selected!=id)return
+   check(result.text("sessionId")==id&&result.text("materialId")==materialId&&result["segments"] is JsonArray){"录制详情身份或片段响应不一致"}
+   requested?.let{visited.add(it)}
+   next=result.text("nextCursor").takeIf{it.isNotBlank()}
+   check(next==null||(next!=requested&&next !in visited)){"录制片段分页未前进"}
+   records+=result.rows("segments");last=result;fetched++
+   if(next==null)break
+   requested=next
+  }
+  if(selected!=id)return
+  val segments=((if(more)detail?.rows("segments").orEmpty()else emptyList())+records).associateBy{it.text("sequence")}.values.sortedBy{it["sequence"]?.jsonPrimitive?.intOrNull?:0}
+  detail=JsonObject((last?:return)+("segments" to JsonArray(segments)))
+  cursor=next;seen=visited;loadedPages=if(more)loadedPages+fetched else fetched
   denied=false;stale=false;error=null
  }
+
  fun readAction(block:suspend()->Unit){if(busy||retrying)return;busy=true;scope.launch{try{lock.withLock{block()}}catch(e:CancellationException){throw e}catch(e:Exception){failure(e)}finally{busy=false}}}
  LaunchedEffect(Unit){busy=true;try{lock.withLock{readSessions()}}catch(e:CancellationException){throw e}catch(e:Exception){failure(e)}finally{busy=false}}
- LaunchedEffect(selected){if(selected!=null){detail=null;cursor=null;seen=emptySet();busy=true;try{lock.withLock{readDetail()}}catch(e:CancellationException){throw e}catch(e:Exception){failure(e)}finally{busy=false}}}
+ LaunchedEffect(selected){if(selected!=null){detail=null;cursor=null;seen=emptySet();loadedPages=0;busy=true;try{lock.withLock{readDetail()}}catch(e:CancellationException){throw e}catch(e:Exception){failure(e)}finally{busy=false}}}
  val processing=detail?.text("processingStatus") in listOf("pending","running")
  LaunchedEffect(selected,processing,lifecycle){if(selected!=null&&processing)lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED){while(isActive){delay(5000);try{lock.withLock{readDetail(keepLoaded=true)}}catch(e:CancellationException){throw e}catch(e:Exception){failure(e);break}}}}
  if(sessions.isEmpty()&&error==null&&!busy)return

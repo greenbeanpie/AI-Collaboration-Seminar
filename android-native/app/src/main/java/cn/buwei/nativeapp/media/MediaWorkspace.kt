@@ -42,7 +42,7 @@ import java.io.File
 import java.util.UUID
 
 @Composable fun MediaWorkspace(repository:ClientRepository,projectId:String?,onActivityChange:(Boolean)->Unit = {}) {
-    val context=LocalContext.current;val scope=rememberCoroutineScope()
+    val context=LocalContext.current;val scope=rememberCoroutineScope();val recordingLifecycle=LocalLifecycleOwner.current.lifecycle
     val owner=repository.accountId?:return
     val epoch=remember(owner){repository.epoch}
     fun assertOwner(){check(repository.accountId==owner&&repository.epoch==epoch){"账户已变化，请重新打开录制与文件"}}
@@ -89,7 +89,7 @@ import java.util.UUID
             reload();selected=destination;progress="已保存本机，请预览后确认上传"
         } catch(e:Exception){if(e is CancellationException)throw e;progress=e.message?:"文件读取失败"}finally{busy=false}
     } }
-    LaunchedEffect(owner) {reload();while(true){delay(1000);running=RecordingService.instance!=null;if(!running)reload()} }
+    LaunchedEffect(owner,recordingLifecycle) {recordingLifecycle.repeatOnLifecycle(Lifecycle.State.STARTED){reload();while(isActive){running=RecordingService.instance!=null;if(!running)reload();delay(1000)}} }
     Column(Modifier.fillMaxSize().padding(20.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)) {
         Text("录制与文件",style=MaterialTheme.typography.headlineMedium)
         Text("文件先保存在当前账户的本机空间；预览确认后上传。",style=MaterialTheme.typography.bodyMedium)
@@ -181,7 +181,12 @@ import java.util.UUID
 }
 
 internal suspend fun uploadNativeRecording(repository:ClientRepository,project:String,store:RecordingStore,onProgress:(String)->Unit,
- uploadFile:suspend(File,String,List<String>)->String={file,purpose,contributors->AttachmentTransfer(repository).upload(project,file,onProgress,purpose,contributors)}
+ uploadFile:suspend(File,String,List<String>)->String={file,purpose,contributors->
+  // Old builds keyed transfers by project + content hash, with no contributor fingerprint.
+  // Resume that same multipart manifest; a known file ID alone does not prove completion.
+  if(store.view().optBoolean("legacyMetadataPreserved"))AttachmentTransfer(repository).upload(project,file,onProgress)
+  else AttachmentTransfer(repository).upload(project,file,onProgress,purpose,contributors)
+ }
 ) {
     val data=store.view();check(data.optString("state") !in listOf("recording","paused")){"请先停止录制"}
     val account=repository.accountId?:error("请登录");val epoch=repository.epoch
