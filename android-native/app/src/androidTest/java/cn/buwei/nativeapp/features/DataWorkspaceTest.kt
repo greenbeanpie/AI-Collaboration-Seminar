@@ -12,6 +12,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.espresso.Espresso.closeSoftKeyboard
 import cn.buwei.nativeapp.NativeTheme
 import cn.buwei.nativeapp.data.ClientRepository
+import cn.buwei.nativeapp.data.NativeDraftStore
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.*
 import okhttp3.mockwebserver.*
@@ -26,13 +27,13 @@ class DataWorkspaceTest {
  private lateinit var server:MockWebServer
  private lateinit var repository:ClientRepository
  private lateinit var context:Context
- private val project="11111111-1111-4111-8111-111111111111"
- private val material="22222222-2222-4222-8222-222222222222"
- private val source="33333333-3333-4333-8333-333333333333"
- private val version="44444444-4444-4444-8444-444444444444"
- private val previous="55555555-5555-4555-8555-555555555555"
- private val file="66666666-6666-4666-8666-666666666666"
- private val user="77777777-7777-4777-8777-777777777777"
+ private val project=UUID.randomUUID().toString()
+ private val material=UUID.randomUUID().toString()
+ private val source=UUID.randomUUID().toString()
+ private val version=UUID.randomUUID().toString()
+ private val previous=UUID.randomUUID().toString()
+ private val file=UUID.randomUUID().toString()
+ private val user=UUID.randomUUID().toString()
  private val calls=ConcurrentLinkedQueue<Pair<String,JsonObject>>()
  private val gets=ConcurrentLinkedQueue<String>()
  private fun reply(data:JsonElement)=MockResponse().setHeader("Content-Type","application/json").setBody(buildJsonObject{put("data",data)}.toString())
@@ -66,9 +67,9 @@ class DataWorkspaceTest {
  return when{route=="$base/sources"->reply(JsonObject(sourceRow()+("sourceVersionId" to JsonPrimitive(version))));route=="$base/resource-library/material/$material"->reply(resource());route.endsWith("/restore")->reply(buildJsonObject{put("fileId",file);put("lifecycleVersion",6);put("deletedAt",JsonNull);put("affectedSourceIds",JsonArray(emptyList()))});route.endsWith("blank-pages")->reply(buildJsonObject{put("confirmed",1);put("textReady",true)});else->MockResponse().setResponseCode(404).setBody("Unexpected write $route")}
  }};server.start();repository=ClientRepository(context,server.url("/").toString().trimEnd('/'),"data-${UUID.randomUUID()}-");runBlocking{repository.exchange("fixture","fixture")}}
  @After fun tearDown(){server.shutdown()}
- private fun await(text:String){compose.waitUntil(15000){compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()}}
+ private fun await(text:String){try{compose.waitUntil(15000){compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()}}catch(failure:Throwable){throw AssertionError("Expected UI text: $text\nGETs: ${gets.joinToString()}\nWrites: ${calls.joinToString{it.first}}\n${compose.onRoot().printToString()}",failure)}}
  private fun click(text:String){await(text);compose.onNode(hasText(text) and hasClickAction()).performScrollTo().performClick()}
- @Test fun oneNewEntryCreatesPastedSourceWithoutImplicitParse(){compose.setContent{NativeTheme{Surface(Modifier.fillMaxSize()){DataWorkspace(repository,project)}}};compose.onAllNodes(hasText("新增资料") and hasClickAction()).assertCountEquals(1);click("新增资料");click("新增方式：成果文档");click("粘贴文本");compose.onNode(hasSetTextAction() and hasText("来源原文")).performScrollTo().performTextInput("项目通知真实原文");closeSoftKeyboard();click("确认新增资料");compose.onNodeWithText("确认新增").performClick();compose.waitUntil(10000){calls.any{it.first.endsWith("/sources")}};val create=calls.first{it.first.endsWith("/sources")};assertEquals("paste",create.second.twText("kind"));assertEquals("项目通知真实原文",create.second.twText("text"));assertEquals("reference",create.second.twText("purpose"));assertTrue(calls.none{it.first.endsWith("/parse")||it.first.endsWith("/analyze")})}
+ @Test fun oneNewEntryCreatesPastedSourceWithoutImplicitParse(){compose.setContent{NativeTheme{Surface(Modifier.fillMaxSize()){DataWorkspace(repository,project)}}};compose.onAllNodes(hasText("新增资料") and hasClickAction()).assertCountEquals(1);click("新增资料");click("新增方式：成果文档");click("粘贴文本");compose.onNode(hasSetTextAction() and hasText("来源原文")).performScrollTo().performTextInput("项目通知真实原文");closeSoftKeyboard();click("确认新增资料");compose.onNodeWithText("确认新增").performClick();compose.waitUntil(10000){calls.any{it.first.endsWith("/sources")}};val create=calls.first{it.first.endsWith("/sources")};assertEquals("paste",create.second.twText("kind"));assertEquals("项目通知真实原文",create.second.twText("text"));assertEquals("reference",create.second.twText("purpose"));assertTrue(calls.none{it.first.endsWith("/parse")||it.first.endsWith("/analyze")});compose.waitUntil(10000){gets.contains("/api/v1/projects/$project/resource-library/source/$source")};assertNull(runBlocking{NativeDraftStore(repository).read("data-intake:$project")})}
  @Test fun purposeChangeUsesResourceRevision(){compose.setContent{NativeTheme{Surface(Modifier.fillMaxSize()){DataWorkspace(repository,project)}}};click("查看资料");click("修改资料用途：参考资料");click("项目背景");click("保存资料用途");compose.onNodeWithText("确认").performClick();compose.waitUntil(10000){calls.isNotEmpty()};val call=calls.first();assertEquals("/api/v1/projects/$project/resource-library/material/$material",call.first);assertEquals(9,call.second["expectedRevision"]!!.jsonPrimitive.int);assertEquals("background",call.second.twText("purpose"))}
  @Test fun recycleRestoreCarriesLifecycleAndDoesNotStartProcessing(){compose.setContent{NativeTheme{Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())){DataWorkspaceFiles(repository,project,0){}}}};click("文件视图：文件库");click("回收站");click("恢复资料");compose.onNodeWithText("确认").performClick();compose.waitUntil(10000){calls.isNotEmpty()};assertEquals("/api/v1/projects/$project/files/$file/restore",calls.first().first);assertEquals(5,calls.first().second["expectedLifecycleVersion"]!!.jsonPrimitive.int);assertEquals(1,calls.size)}
  @Test fun directorySelectionFetchesActualFixedVersionSection(){compose.setContent{NativeTheme{Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())){DataWorkspaceReference(repository,project,"source",version)}}};click("资料目录、搜索与原文定位");await("第 2 页 · 开题要求");assertTrue(gets.none{it.contains("/section?")});click("第 2 页 · 开题要求");await("实际第二页原文，可供核对引用");assertTrue(gets.any{it.contains("/resource-index/source/$version/section?")&&it.contains("sectionId=section-2")&&it.contains("neighbors=true")});assertTrue(calls.isEmpty())}
