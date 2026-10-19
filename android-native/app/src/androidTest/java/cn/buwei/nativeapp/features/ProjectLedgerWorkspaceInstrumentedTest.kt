@@ -15,6 +15,8 @@ import java.util.concurrent.ConcurrentLinkedQueue
 
 class ProjectLedgerWorkspaceInstrumentedTest {
     @get:Rule val compose = createComposeRule()
+    private fun reveal(value: String) { compose.waitUntil(10000) { try { compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(value)); compose.onAllNodesWithText(value).fetchSemanticsNodes().isNotEmpty() } catch(_: AssertionError) { false } } }
+    private fun click(value: String) { reveal(value); compose.onNode(hasText(value) and hasClickAction()).performClick() }
     @Test fun cursorBackNavigationAndExactTypeFilterUseRealEventsContract() {
         val server = MockWebServer(); val calls = ConcurrentLinkedQueue<RecordedRequest>(); val project = "11111111-1111-4111-8111-111111111111"; val user = "22222222-2222-4222-8222-222222222222"
         fun response(value: String) = MockResponse().setHeader("Content-Type", "application/json").setBody("{\"data\":$value}")
@@ -26,11 +28,11 @@ class ProjectLedgerWorkspaceInstrumentedTest {
         try {
             val repo = ClientRepository(InstrumentationRegistry.getInstrumentation().targetContext, server.url("/").toString().trimEnd('/'), "ledger-${UUID.randomUUID()}-"); runBlocking { repo.exchange("fixture", "fixture") }
             compose.setContent { NativeTheme { Surface { ProjectLedgerWorkspace(repo, project) } } }
-            compose.waitUntil(10000) { compose.onAllNodesWithText("待开始 → 已完成").fetchSemanticsNodes().isNotEmpty() }
-            compose.onNodeWithText("查看活动详情").performScrollTo().performClick(); compose.onNodeWithText("可读活动详情").assertExists()
-            compose.onNodeWithText("下一页").performScrollTo().performClick(); compose.waitUntil(10000) { compose.onAllNodesWithText("成员已保存材料，版本 r4。").fetchSemanticsNodes().isNotEmpty() }
-            compose.onNodeWithText("上一页").performScrollTo().performClick(); compose.waitUntil(10000) { compose.onAllNodesWithText("待开始 → 已完成").fetchSemanticsNodes().isNotEmpty() }
-            compose.onNodeWithText("事件类型：全部活动").performScrollTo().performClick(); compose.onNode(hasText("更新任务状态") and hasClickAction()).performClick()
+            reveal("待开始 → 已完成")
+            click("查看活动详情"); reveal("可读活动详情"); compose.onNodeWithText("可读活动详情").assertExists()
+            click("下一页"); reveal("成员已保存材料，版本 r4。")
+            click("上一页"); reveal("待开始 → 已完成")
+            click("事件类型：全部活动"); compose.onNode(hasText("更新任务状态") and hasClickAction()).performClick()
             compose.waitUntil(10000) { calls.any { it.requestUrl?.queryParameter("type") == "task.status_changed" } }
             assertTrue(calls.any { it.requestUrl?.queryParameter("cursor") == "older" }); assertTrue(calls.all { it.method == "GET" }); assertTrue(calls.none { it.requestUrl?.queryParameter("actor") != null })
         } finally { server.shutdown() }

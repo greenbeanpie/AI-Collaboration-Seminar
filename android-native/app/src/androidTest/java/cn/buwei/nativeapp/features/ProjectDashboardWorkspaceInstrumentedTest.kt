@@ -30,29 +30,31 @@ class ProjectDashboardWorkspaceInstrumentedTest {
         } }; server.start(); repository = ClientRepository(InstrumentationRegistry.getInstrumentation().targetContext, server.url("/").toString().trimEnd('/'), "dashboard-${UUID.randomUUID()}-"); runBlocking { repository.exchange("fixture", "fixture") }
     }
     @After fun cleanup() { server.shutdown() }
-    private fun waitFor(value: String) { compose.waitUntil(10000) { compose.onAllNodesWithText(value).fetchSemanticsNodes().isNotEmpty() } }
+    // LazyColumn may not compose an offscreen item on short tablet viewports.
+    private fun waitFor(value: String) { compose.waitUntil(10000) { try { compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(value)); compose.onAllNodesWithText(value).fetchSemanticsNodes().isNotEmpty() } catch(_: AssertionError) { false } } }
+    private fun click(value: String) { waitFor(value); compose.onNodeWithText(value).performClick() }
     @Test fun paginationDoesNotPresentIncompleteProjectSubsetAsCompleteTotals() {
         compose.setContent { NativeTheme { Surface { ProjectDashboardWorkspace(repository, { navigation.add("project:$it") }, { navigation.add(it) }) } } }
-        waitFor("第一项目"); compose.onNodeWithText("加载全部项目及任务图后显示完整统计。").performScrollTo().assertExists()
-        compose.onNodeWithText("加载更多项目").performScrollTo().performClick(); waitFor("第二项目")
-        compose.waitUntil(10000) { compose.onAllNodesWithText("进行中 1 个项目 · 任务完成 1 / 2").fetchSemanticsNodes().isNotEmpty() }
+        waitFor("第一项目"); waitFor("加载全部项目及任务图后显示完整统计。"); compose.onNodeWithText("加载全部项目及任务图后显示完整统计。").assertExists()
+        click("加载更多项目"); waitFor("第二项目")
+        waitFor("进行中 1 个项目 · 任务完成 1 / 2")
         assertTrue(gets.any { it.requestUrl?.queryParameter("cursor") == "page-two" }); assertTrue(gets.all { it.method == "GET" })
-        compose.onAllNodesWithText("进入项目")[0].performScrollTo().performClick(); assertTrue(navigation.first().startsWith("project:"))
-        compose.onNodeWithText("新建项目").performScrollTo().performClick(); compose.onNodeWithText("加入团队").performScrollTo().performClick(); assertTrue(navigation.contains("create-project")); assertTrue(navigation.contains("join"))
+        waitFor("进入项目"); compose.onAllNodesWithText("进入项目")[0].performClick(); assertTrue(navigation.first().startsWith("project:"))
+        click("新建项目"); click("加入团队"); assertTrue(navigation.contains("create-project")); assertTrue(navigation.contains("join"))
     }
     @Test fun parallelGraphsFromSamePageRetainEveryProjectSummary() {
         multiProjectPage = true
         compose.setContent { NativeTheme { Surface { ProjectDashboardWorkspace(repository, {}, {}) } } }
-        compose.waitUntil(10000) { compose.onAllNodesWithText("进行中 1 个项目 · 任务完成 1 / 2").fetchSemanticsNodes().isNotEmpty() }
+        waitFor("进行中 1 个项目 · 任务完成 1 / 2")
         assertTrue(gets.any { it.requestUrl?.encodedPath?.contains(project) == true && it.requestUrl?.encodedPath?.endsWith("/tasks/graph") == true })
         assertTrue(gets.any { it.requestUrl?.encodedPath?.contains(second) == true && it.requestUrl?.encodedPath?.endsWith("/tasks/graph") == true })
     }
     @Test fun archiveAndSearchUseOnlySupportedBackendQueryParameters() {
         compose.setContent { NativeTheme { Surface { ProjectDashboardWorkspace(repository, {}, {}) } } }
-        waitFor("第一项目"); compose.onNodeWithText("搜索项目名称或说明").performScrollTo().performTextInput("研究")
-        androidx.test.espresso.Espresso.closeSoftKeyboard(); compose.onNodeWithText("搜索").performScrollTo().performClick()
+        waitFor("第一项目"); waitFor("搜索项目名称或说明"); compose.onNodeWithText("搜索项目名称或说明").performTextInput("研究")
+        androidx.test.espresso.Espresso.closeSoftKeyboard(); click("搜索")
         compose.waitUntil(10000) { gets.any { it.requestUrl?.queryParameter("q") == "研究" } }
-        compose.onNodeWithText("项目筛选：全部当前项目").performScrollTo().performClick(); compose.onNodeWithText("已归档项目").performClick(); waitFor("归档项目")
+        click("项目筛选：全部当前项目"); compose.onNodeWithText("已归档项目").performClick(); waitFor("归档项目")
         assertTrue(gets.any { it.requestUrl?.queryParameter("status") == "archived" }); assertTrue(gets.none { it.requestUrl?.queryParameter("status") == "done" })
     }
 }
