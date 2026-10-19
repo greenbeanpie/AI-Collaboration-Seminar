@@ -167,13 +167,40 @@ public sealed class MainWindow : Window
             var group = new StackPanel { Spacing = 6 };
             group.Children.Add(new TextBlock { Text = row.Status == "pending" ? "等待网络同步" : "需要人工核对：" + row.Error, TextWrapping = TextWrapping.Wrap });
             group.Children.Add(new TextBlock { Text = "本机修改：" + Summary(JsonNode.Parse(row.Body)), TextWrapping = TextWrapping.Wrap });
+            if (row.Status is "awaiting_confirmation" or "uncertain" or "sending")
+            {
+                var body = JsonNode.Parse(row.Body);
+                group.Children.Add(new TextBlock { Text = "任务：" + row.Path.Split('/')[6] + "\n固定任务版本：" + body?["expectedRevision"] + "\n成果说明：" + body?["body"] + "\n文件版本：" + string.Join("、", body?["materialVersionIds"]?.AsArray().Select(x => x?.ToString()) ?? []), TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
+                var history = new StackPanel { Spacing = 8 }; group.Children.Add(history);
+                string? cursor = null; var seenCursors = new HashSet<string>(); var completed = false;
+                group.Children.Add(Button("联网读取提交历史／下一页", async () =>
+                {
+                    if (completed) { SetStatus("提交历史已读取完毕"); return; }
+                    var page = await repository.GetFreshAsync(row.Path + "?limit=30" + (cursor == null ? "" : "&cursor=" + Uri.EscapeDataString(cursor)));
+                    if (page?["items"] is not JsonArray items) throw new InvalidDataException("提交历史响应无效");
+                    foreach (var item in items) history.Children.Add(new TextBlock { Text = $"提交 {item?["submissionId"]} · {item?["createdAt"]} · {item?["status"]}\n提交人：{item?["submittedBy"]}\n{item?["body"]}\n文件版本：{item?["materialVersionIds"]}", TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
+                    cursor = page["nextCursor"]?.GetValue<string>(); completed = string.IsNullOrEmpty(cursor);
+                    if (!completed && !seenCursors.Add(cursor!)) throw new InvalidDataException("提交历史分页未前进，请重新打开同步中心");
+                    SetStatus(completed ? "已读取完整服务端提交历史" : "本页已读取，可继续读取下一页");
+                }));
+                var sendReviewed = new CheckBox { Content = "我已核对任务提交历史及固定内容，确认发送；自动评价可能产生费用。结果不明时仅恢复原幂等键。" };
+                group.Children.Add(sendReviewed);
+                group.Children.Add(Button(row.Status == "awaiting_confirmation" ? "确认发送此成果" : "已核对，使用原键恢复提交", async () =>
+                {
+                    if (sendReviewed.IsChecked != true) throw new InvalidOperationException("请先核对并勾选确认。");
+                    await repository.ConfirmQueuedSubmissionAsync(row.Id, true);
+                    group.IsHitTestVisible = false; group.Opacity = 0.5;
+                    SetStatus("本次发送已结束，请重新打开同步中心核对成功、冲突或结果不明状态。");
+                }));
+            }
             if (row.Server != null) group.Children.Add(new TextBlock { Text = "服务端当前版本：" + Summary(JsonNode.Parse(row.Server)), TextWrapping = TextWrapping.Wrap });
             group.Children.Add(Button("导出本机修改", async () => { var file = await files.SaveAsync("补位-待同步修改", ".json"); if (file != null) await File.WriteAllTextAsync(file.Path, row.Body); }));
             if (row.Status != "pending")
             {
-                var reviewed = new CheckBox { Content = "我已核对并备份本机修改，确认采用服务端版本" };
+                var heldSubmission = row.Status is "awaiting_confirmation" or "uncertain" or "sending";
+                var reviewed = new CheckBox { Content = heldSubmission ? "我已核对并备份，确认仅移除本机队列记录；不会撤回服务端已发生的提交" : "我已核对并备份本机修改，确认采用服务端版本" };
                 group.Children.Add(reviewed);
-                var discard = Button("采用服务端版本", async () => { if (reviewed.IsChecked != true) return; await repository.ResolveAsync(row.Id, null, true); group.IsHitTestVisible = false; group.Opacity = 0.5; SetStatus("已采用服务端版本，本机备份仍可保留"); });
+                var discard = Button(heldSubmission ? "移除本机队列记录" : "采用服务端版本", async () => { if (reviewed.IsChecked != true) return; await repository.ResolveAsync(row.Id, null, true); group.IsHitTestVisible = false; group.Opacity = 0.5; SetStatus("本机队列记录已移除，服务端记录和本机草稿保留"); });
                 discard.IsEnabled = false; reviewed.Checked += (_, _) => discard.IsEnabled = true; reviewed.Unchecked += (_, _) => discard.IsEnabled = false; group.Children.Add(discard);
                 if (row.Status == "conflict" && JsonNode.Parse(row.Body) is JsonObject local && JsonNode.Parse(row.Server ?? "null") is JsonObject server && server["revision"] != null && row.Method is "PUT" or "PATCH")
                 {

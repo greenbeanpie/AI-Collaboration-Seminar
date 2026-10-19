@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Buwei.Windows.Core;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
@@ -82,17 +83,44 @@ public sealed partial class WorkspaceView
             var text = Ui.Field("本轮成果说明", draft.Text("body"), true, 12000);
             var submissionRevision = draft?["expectedRevision"].Copy() ?? task?["revision"].Copy();
             TrackDraft(key, () => new JsonObject { ["body"] = text.Text, ["expectedRevision"] = submissionRevision.Copy() }, text);
-            panel.Children.Add(Ui.Card(text, Action("暂存成果说明", () => repository.Store.SaveDraftAsync(key, new JsonObject { ["body"] = text.Text, ["expectedRevision"] = submissionRevision.Copy() })), Action("提交本轮成果", async () =>
+            var submitting = false;
+            async Task SubmitAsync(bool cacheOnly)
             {
-                if (string.IsNullOrWhiteSpace(text.Text)) throw new InvalidOperationException("请输入成果说明。");
-                var submittedText = text.Text; var submittedRevision = submissionRevision.Copy(); var submissionToken = PageToken;
-                await repository.Store.SaveDraftAsync(key, new JsonObject { ["body"] = submittedText, ["expectedRevision"] = submittedRevision.Copy() });
-                var latestFiles = await FreshSubmissionFilesAsync(path, submissionToken);
-                if (latestFiles.Count > 10) throw new InvalidOperationException("当前成果文件超过 10 个，请先归档不参与本轮的文件。");
-                await WriteAsync("POST", path + "/submissions", new JsonObject { ["expectedRevision"] = submittedRevision, ["body"] = submittedText.Trim(), ["materialVersionIds"] = new JsonArray(latestFiles.Select(x => x["versionId"].Copy()).ToArray()) });
-                if(text.Text!=submittedText){await repository.Store.SaveDraftAsync(key,new JsonObject{["body"]=text.Text,["expectedRevision"]=submissionRevision.Copy()});StatusChanged?.Invoke("成果已提交；继续输入的内容仍保留为本机草稿。");return;}
-                await repository.Store.DeleteDraftAsync(key); await ReplaceAsync(ct => TaskDetailAsync(id, ct));
-            }, "将固定当前文件版本并提交成果。项目启用 AI 时可能自动触发评价。", true)));
+                if (submitting) throw new InvalidOperationException("此任务的提交操作正在处理中。");
+                submitting = true;
+                try
+                {
+                    if (string.IsNullOrWhiteSpace(text.Text)) throw new InvalidOperationException("请输入成果说明。");
+                    var submittedText = text.Text; var submittedRevision = submissionRevision.Copy(); var submissionToken = PageToken;
+                    await repository.Store.SaveDraftAsync(key, new JsonObject { ["body"] = submittedText, ["expectedRevision"] = submittedRevision.Copy() });
+                    if (cacheOnly)
+                    {
+                        var review = await repository.ReviewCachedSubmissionAsync(projectId!, id, submittedRevision!.GetValue<int>(), submissionToken);
+                        var summary = Ui.Stack(Ui.Label("离线待提交 · 任务版本 " + review.Revision, 20),
+                            Ui.Label("最早缓存时间：" + review.FileSet.OldestSnapshotAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz")),
+                            Ui.Label("缓存可能落后于服务端。同步时服务端会核对权限和任务版本；项目启用 AI 时可能触发自动评价。"),
+                            Ui.Label("成果说明"), Ui.Label(submittedText), Ui.Label("固定成果文件版本（" + review.FileSet.Files.Count + " 个）"));
+                        foreach (var file in review.FileSet.Files) summary.Children.Add(Ui.Label(file.Name + "\n版本 " + file.VersionId));
+                        if (review.FileSet.Files.Count == 0) summary.Children.Add(Ui.Label("本轮不包含成果文件。"));
+                        var dialog = new ContentDialog { Title = "核对离线成果提交", Content = Ui.Scroll(summary), PrimaryButtonText = "保存待提交记录", CloseButtonText = "取消", DefaultButton = ContentDialogButton.Close, XamlRoot = XamlRoot };
+                        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+                        submissionToken.ThrowIfCancellationRequested();
+                        await repository.QueueReviewedSubmissionAsync(review, submittedText, submissionToken);
+                        StatusChanged?.Invoke("成果已保存到本机队列，尚未提交。草稿保留；请到同步中心发起同步并核对结果。");
+                        return;
+                    }
+                    if ((await repository.Store.WritesAsync()).Any(w => w.Path == path + "/submissions")) throw new InvalidOperationException("此任务已有待处理的离线提交，请先到同步中心核对。");
+                    var latestFiles = await repository.ReadSubmissionFilesAsync(projectId!, id, false, submissionToken);
+                    await WriteAsync("POST", path + "/submissions", new JsonObject { ["expectedRevision"] = submittedRevision, ["body"] = submittedText.Trim(), ["materialVersionIds"] = new JsonArray(latestFiles.Files.Select(x => (JsonNode?)JsonValue.Create(x.VersionId)).ToArray()) });
+                    if (text.Text != submittedText) { await repository.Store.SaveDraftAsync(key, new JsonObject { ["body"] = text.Text, ["expectedRevision"] = submissionRevision.Copy() }); StatusChanged?.Invoke("成果已提交；继续输入的内容仍保留为本机草稿。"); return; }
+                    await repository.Store.DeleteDraftAsync(key); await ReplaceAsync(ct => TaskDetailAsync(id, ct));
+                }
+                finally { submitting = false; }
+            }
+            panel.Children.Add(Ui.Card(text,
+                Action("暂存成果说明", () => repository.Store.SaveDraftAsync(key, new JsonObject { ["body"] = text.Text, ["expectedRevision"] = submissionRevision.Copy() })),
+                Action("联网核对并提交成果", () => SubmitAsync(false), "将联网读取完整成果文件清单并固定版本。项目启用 AI 时可能自动触发评价。", true),
+                Action("离线保存待提交成果", () => SubmitAsync(true))));
         }
         panel.Children.Add(Ui.Label("提交与验收历史", 20));
         await AddPagedAsync(panel, path + "/submissions?limit=30", row =>
@@ -109,27 +137,6 @@ public sealed partial class WorkspaceView
         panel.Children.Add(Action("私密问询", () => ReplaceAsync(ct => TaskInquiriesAsync(id, ct))));
         panel.Children.Add(Action("本地 Agent 代实施", () => ReplaceAsync(ct => TaskBridgeAsync(id, ct))));
         return panel;
-    }
-    private async Task<List<JsonNode>> FreshSubmissionFilesAsync(string path, CancellationToken token)
-    {
-        var files = new Dictionary<string, JsonNode>(); var cursors = new HashSet<string>(); string? cursor = null;
-        do
-        {
-            token.ThrowIfCancellationRequested();
-            var page = await repository.GetFreshAsync(path + "/files?limit=100" + (cursor == null ? "" : "&cursor=" + Escape(cursor)), token);
-            if (page?["items"] is not JsonArray) throw new InvalidOperationException("无法核对完整成果文件列表，请刷新后重试。");
-            foreach (var file in page.Rows())
-            {
-                var materialId = file.Text("materialId");
-                if (materialId.Length == 0) throw new InvalidOperationException("成果文件缺少标识，无法安全提交。");
-                files[materialId] = file;
-            }
-            cursor = page.Text("nextCursor");
-            if (cursor.Length > 0 && !cursors.Add(cursor)) throw new InvalidOperationException("成果文件分页游标重复，请刷新后重试。");
-        } while (cursor.Length > 0);
-        var active = files.Values.Where(f => f.Text("archivedAt").Length == 0 && f.Text("materialArchivedAt").Length == 0 && f.Text("deletedAt").Length == 0).ToList();
-        if (active.Any(f => f.Text("versionId").Length == 0)) throw new InvalidOperationException("成果文件尚无可固定的版本，请刷新后重试。");
-        return active;
     }
     private async Task<UIElement> TaskCommentsAsync(string id, CancellationToken token)
     {

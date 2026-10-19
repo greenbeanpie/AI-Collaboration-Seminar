@@ -162,9 +162,18 @@ public sealed partial class ClientRepository : IDisposable
                 if (row.AccountId != account || row.Status != "pending") break;
                 try
                 {
+                    // Persist before dispatch: a crash or lost response must not silently replay a potentially paid submission.
+                    if (IsSubmissionWrite(row)) { await Store.MarkWriteAsync(row.Id, "sending"); Guard(started); }
                     var tail = row.Path[("/api/v1/projects/" + row.ProjectId + "/").Length..];
                     var data = await NetworkAsync("POST", "/api/v1/projects/" + row.ProjectId + "/offline-sync",
                         new JsonObject { ["method"] = row.Method, ["tail"] = tail, ["body"] = JsonNode.Parse(row.Body) }, row.Id, ct); Guard(started);
+                    if (IsSubmissionWrite(row))
+                    {
+                        var sent = JsonNode.Parse(row.Body);
+                        if (!Guid.TryParseExact(data?["submissionId"]?.ToString(), "D", out _) || data?["taskId"]?.ToString() != row.Path.Split('/')[6] ||
+                            data?["submittedBy"]?.ToString() != row.AccountId || data?["body"]?.ToString() != sent?["body"]?.ToString() ||
+                            !JsonNode.DeepEquals(data?["materialVersionIds"], sent?["materialVersionIds"])) throw new InvalidDataException("服务端响应未证明原成果提交已完成。");
+                    }
                     writeResults[row.Id] = data?.DeepClone();
                     if (writeResults.Count > 128) writeResults.Clear();
                     await Store.ConfirmWriteAsync(row, data);
@@ -174,6 +183,8 @@ public sealed partial class ClientRepository : IDisposable
                 {
                     Guard(started);
                     if (ex.Status == 401) { ClearSession(); throw; }
+                    if (IsSubmissionWrite(row) && (ex.Status is 408 or 429 || ex.Status >= 500 || ex.Status == 409 && ex.Code is "INVALID_STATE" or "IDEMPOTENCY_CONFLICT"))
+                    { await Store.MarkWriteAsync(row.Id, "uncertain", "提交结果尚未确认，请核对服务端记录后使用原幂等键恢复。" + ex.Message); break; }
                     if (ex.Status == 409)
                     {
                         JsonNode? server = ex.Details;
@@ -192,18 +203,33 @@ public sealed partial class ClientRepository : IDisposable
                     }
                     break;
                 }
-                catch (Exception ex) when (ex is HttpRequestException || ex is TaskCanceledException && !ct.IsCancellationRequested) { break; }
+                catch (Exception ex) when (ex is HttpRequestException || ex is OperationCanceledException || IsSubmissionWrite(row) && ex is InvalidDataException or System.Text.Json.JsonException)
+                {
+                    Guard(started);
+                    if (IsSubmissionWrite(row)) await Store.MarkWriteAsync(row.Id, "uncertain", "发送中断或响应无法确认，请核对服务端记录后使用原幂等键恢复。");
+                    if (ct.IsCancellationRequested) throw;
+                    break;
+                }
             }
         }
         finally { syncing.Release(); }
     }
     public async Task ResolveAsync(string id, JsonNode? revisedBody, bool discard, CancellationToken ct = default)
     {
-        var row = (await Store.WritesAsync()).FirstOrDefault(x => x.Id == id) ?? throw new InvalidOperationException("同步记录不存在");
-        if (row.AccountId != AccountId) throw new InvalidOperationException("账号不匹配");
-        if (!discard && revisedBody == null) throw new InvalidOperationException("请核对服务端当前版本后重新编辑");
-        if (!discard) await Store.EnqueueAsync(Guid.NewGuid().ToString(), row.Method, row.Path, revisedBody);
-        await Store.CompleteWriteAsync(id);
+        var started = epoch;
+        await syncing.WaitAsync(ct);
+        try
+        {
+            Guard(started);
+            var row = (await Store.WritesAsync()).FirstOrDefault(x => x.Id == id) ?? throw new InvalidOperationException("同步记录不存在");
+            Guard(started);
+            if (row.AccountId != AccountId) throw new InvalidOperationException("账号不匹配");
+            if (!discard && row.Status is "awaiting_confirmation" or "uncertain" or "sending") throw new InvalidOperationException("此提交只能核对后使用原幂等键恢复，不能生成新键重发。");
+            if (!discard && revisedBody == null) throw new InvalidOperationException("请核对服务端当前版本后重新编辑");
+            if (!discard) { await Store.EnqueueAsync(Guid.NewGuid().ToString(), row.Method, row.Path, revisedBody); Guard(started); }
+            await Store.CompleteWriteAsync(id); Guard(started);
+        }
+        finally { syncing.Release(); }
         if (!discard) await SyncAsync(ct);
     }
     private async Task<JsonNode?> NetworkAsync(string method, string path, JsonNode? body, string? idempotencyKey, CancellationToken ct)

@@ -70,7 +70,7 @@ public sealed partial class LocalStore : IDisposable
     public async Task SaveDraftAsync(string key, JsonNode content) => await UseAsync(async c => { using var cmd = Command(c, "INSERT OR REPLACE INTO drafts VALUES($k,$d)", ("$k", key), ("$d", content.ToJsonString())); return await cmd.ExecuteNonQueryAsync(); });
     public Task<JsonNode?> LoadDraftAsync(string key) => UseAsync(async c => { using var cmd = Command(c, "SELECT data FROM drafts WHERE key=$k", ("$k", key)); return JsonNode.Parse((string?)await cmd.ExecuteScalarAsync() ?? "null"); });
     public async Task DeleteDraftAsync(string key) => await UseAsync(async c => { using var cmd = Command(c, "DELETE FROM drafts WHERE key=$k", ("$k", key)); return await cmd.ExecuteNonQueryAsync(); });
-    public async Task EnqueueAsync(string id, string method, string path, JsonNode? body)
+    public async Task EnqueueAsync(string id, string method, string path, JsonNode? body, bool rejectExistingPath = false, bool manualConfirmation = false)
     {
         var owner = AccountId ?? throw new InvalidOperationException("请先登录");
         var project = ClientPaths.Project(path) ?? throw new InvalidOperationException("缺少项目");
@@ -79,9 +79,11 @@ public sealed partial class LocalStore : IDisposable
         {
             using var permission = Command(c, "SELECT count(*) FROM revoked WHERE project=$p", ("$p", project));
             if ((long)(await permission.ExecuteScalarAsync())! != 0) throw new InvalidOperationException("项目权限已撤销，修改保留但不能同步");
-            using var cmd = Command(c, "INSERT OR IGNORE INTO writes(id,account,project,method,path,body,created) VALUES($i,$a,$p,$m,$u,$b,$t)",
-                ("$i", id), ("$a", owner), ("$p", project), ("$m", method), ("$u", path), ("$b", body?.ToJsonString() ?? "{}"), ("$t", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
-            return await cmd.ExecuteNonQueryAsync();
+            using var cmd = Command(c, "INSERT OR IGNORE INTO writes(id,account,project,method,path,body,created,status) SELECT $i,$a,$p,$m,$u,$b,$t,$s WHERE $unique=0 OR NOT EXISTS(SELECT 1 FROM writes WHERE method=$m AND path=$u)",
+                ("$i", id), ("$a", owner), ("$p", project), ("$m", method), ("$u", path), ("$b", body?.ToJsonString() ?? "{}"), ("$t", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()), ("$unique", rejectExistingPath ? 1 : 0), ("$s", manualConfirmation ? "awaiting_confirmation" : "pending"));
+            var inserted = await cmd.ExecuteNonQueryAsync();
+            if (rejectExistingPath && inserted == 0) throw new InvalidOperationException("此任务已有待同步或冲突的成果提交，请先到同步中心处理。");
+            return inserted;
         });
     }
     public Task<List<PendingWrite>> WritesAsync() => UseAsync(async c =>

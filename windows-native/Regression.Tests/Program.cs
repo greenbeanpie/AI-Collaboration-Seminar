@@ -458,6 +458,137 @@ tests.Add(("Offline preparation cannot retain stale original text after a fixed 
     Equal(await f.Store.ReadSnapshotAsync(oldPath), null); True(!await f.Store.IsRevokedAsync(Project));
     Equal((await f.Store.ReadSnapshotAsync(Root + "/offline-ready"))?.Data?["state"]?.ToString(), "partial");
 }));
+
+tests.Add(("Offline submission fixes every cached page and persists without HTTP before explicit sync", async () =>
+{
+    using var f = new Fixture(); await f.Login(); await SubmissionCache(f);
+    var second = new JsonObject { ["items"] = new JsonArray(SubmissionItem("55555555-5555-4555-8555-555555555555", "66666666-6666-4666-8666-666666666666")), ["nextCursor"] = null };
+    await f.Store.SaveSnapshotAsync(TaskPath + "/files?limit=100", new JsonObject { ["items"] = new JsonArray(SubmissionItem()), ["nextCursor"] = "next page/中文" });
+    await f.Store.SaveSnapshotAsync(TaskPath + "/files?limit=100&cursor=" + Uri.EscapeDataString("next page/中文"), second);
+    var calls = 0; f.Handler.Route = _ => { calls++; throw new HttpRequestException("offline"); };
+    var review = await f.Repository.ReviewCachedSubmissionAsync(Project, TaskPath.Split('/').Last(), 7);
+    Equal(review.FileSet.Files.Count, 2); True(review.FileSet.OldestSnapshotAt != null);
+    var key = await f.Repository.QueueReviewedSubmissionAsync(review, "成果说明"); Equal(calls, 0);
+    var row = (await f.Store.WritesAsync()).Single(); Equal(row.Id, key); Equal(row.Status, "awaiting_confirmation");
+    var body = JsonNode.Parse(row.Body)!; Equal(body["expectedRevision"]!.GetValue<int>(), 7); Equal(body["materialVersionIds"]!.AsArray().Count, 2);
+    f.Handler.Route = request => { Equal(request.Key, key); Equal(JsonNode.Parse(request.Body!)!["body"]!.ToJsonString(), body.ToJsonString()); throw new HttpRequestException("synthetic lost response"); };
+    await f.Repository.SyncAsync(); Equal((await f.Store.WritesAsync()).Single().Status, "awaiting_confirmation");
+    await Reject(() => f.Repository.ConfirmQueuedSubmissionAsync(key, false));
+    await f.Repository.ConfirmQueuedSubmissionAsync(key, true); Equal((await f.Store.WritesAsync()).Single().Status, "uncertain");
+    f.Handler.Route = _ => throw new InvalidOperationException("background must not replay uncertain submission");
+    await f.Repository.SyncAsync();
+    await Reject(() => f.Repository.ResolveAsync(key, body.DeepClone(), false));
+    f.Handler.Route = request => { Equal(request.Key, key); return Task.FromResult(Reply(SubmissionSuccess(request))); };
+    await f.Repository.ConfirmQueuedSubmissionAsync(key, true); Equal((await f.Store.WritesAsync()).Count, 0);
+}));
+
+tests.Add(("Offline submission rejects a missing cached continuation and fresh mode never uses cache", async () =>
+{
+    using var f = new Fixture(); await f.Login(); await SubmissionCache(f);
+    await f.Store.SaveSnapshotAsync(TaskPath + "/files?limit=100", new JsonObject { ["items"] = new JsonArray(SubmissionItem()), ["nextCursor"] = "absent" });
+    f.Handler.Route = _ => throw new HttpRequestException("offline");
+    await Reject(() => f.Repository.ReviewCachedSubmissionAsync(Project, TaskPath.Split('/').Last(), 7));
+    await Reject(() => f.Repository.ReadSubmissionFilesAsync(Project, TaskPath.Split('/').Last(), false)); Equal((await f.Store.WritesAsync()).Count, 0);
+}));
+
+tests.Add(("Submission pagination rejects duplicate materials and cycling cursors", async () =>
+{
+    using var f = new Fixture(); await f.Login();
+    f.Handler.Route = _ => Task.FromResult(Reply(new JsonObject { ["items"] = new JsonArray(SubmissionItem()), ["nextCursor"] = "again" }));
+    await Reject(() => f.Repository.ReadSubmissionFilesAsync(Project, TaskPath.Split('/').Last(), false));
+    f.Handler.Route = _ => Task.FromResult(Reply(new JsonObject { ["items"] = new JsonArray(), ["nextCursor"] = "again" }));
+    await Reject(() => f.Repository.ReadSubmissionFilesAsync(Project, TaskPath.Split('/').Last(), false));
+}));
+
+tests.Add(("Submission excludes archived/deleted versions and rejects invalid identity or missing pagination proof", async () =>
+{
+    using var f = new Fixture(); await f.Login();
+    var archived = SubmissionItem(); archived["archivedAt"] = "2026-10-20"; archived["versionId"] = null;
+    f.Handler.Route = _ => Task.FromResult(Reply(new JsonObject { ["items"] = new JsonArray(archived.DeepClone()), ["nextCursor"] = null }));
+    Equal((await f.Repository.ReadSubmissionFilesAsync(Project, TaskPath.Split('/').Last(), false)).Files.Count, 0);
+    foreach (var field in new[] { "materialId", "versionId", "taskId" })
+    {
+        var invalid = SubmissionItem(); invalid[field] = "bad";
+        f.Handler.Route = _ => Task.FromResult(Reply(new JsonObject { ["items"] = new JsonArray(invalid.DeepClone()), ["nextCursor"] = null }));
+        await Reject(() => f.Repository.ReadSubmissionFilesAsync(Project, TaskPath.Split('/').Last(), false));
+    }
+    f.Handler.Route = _ => Task.FromResult(Reply(new JsonObject { ["items"] = new JsonArray() }));
+    await Reject(() => f.Repository.ReadSubmissionFilesAsync(Project, TaskPath.Split('/').Last(), false));
+}));
+
+tests.Add(("Offline submission rejects revision drift and changed reviewed file versions", async () =>
+{
+    using var f = new Fixture(); await f.Login(); await SubmissionCache(f);
+    await Reject(() => f.Repository.ReviewCachedSubmissionAsync(Project, TaskPath.Split('/').Last(), 6));
+    var review = await f.Repository.ReviewCachedSubmissionAsync(Project, TaskPath.Split('/').Last(), 7);
+    await f.Store.SaveSnapshotAsync(TaskPath + "/files?limit=100", new JsonObject { ["items"] = new JsonArray(SubmissionItem(version: "66666666-6666-4666-8666-666666666666")), ["nextCursor"] = null });
+    await Reject(() => f.Repository.QueueReviewedSubmissionAsync(review, "body")); Equal((await f.Store.WritesAsync()).Count, 0);
+}));
+
+tests.Add(("Offline submission blocks stale account and revoked membership and cancelled intent", async () =>
+{
+    using var f = new Fixture(); await f.Login(); await SubmissionCache(f);
+    var review = await f.Repository.ReviewCachedSubmissionAsync(Project, TaskPath.Split('/').Last(), 7);
+    using var cancelled = new CancellationTokenSource(); cancelled.Cancel(); await Reject(() => f.Repository.QueueReviewedSubmissionAsync(review, "body", cancelled.Token));
+    await f.Store.RevokeAsync(Project); await Reject(() => f.Repository.QueueReviewedSubmissionAsync(review, "body"));
+    await f.Login("account-b"); await Reject(() => f.Repository.QueueReviewedSubmissionAsync(review, "body")); Equal((await f.Store.WritesAsync()).Count, 0);
+}));
+
+tests.Add(("Offline submission double confirmation creates one durable intent and never bypasses conflicts", async () =>
+{
+    using var f = new Fixture(); await f.Login(); await SubmissionCache(f);
+    var review = await f.Repository.ReviewCachedSubmissionAsync(Project, TaskPath.Split('/').Last(), 7);
+    var attempts = new[] { f.Repository.QueueReviewedSubmissionAsync(review, "first"), f.Repository.QueueReviewedSubmissionAsync(review, "second") };
+    try { await Task.WhenAll(attempts); } catch (InvalidOperationException) { }
+    Equal(attempts.Count(x => x.IsCompletedSuccessfully), 1); var row = (await f.Store.WritesAsync()).Single();
+    await f.Store.MarkWriteAsync(row.Id, "conflict", "synthetic");
+    await Reject(() => f.Repository.QueueReviewedSubmissionAsync(review, "third")); Equal((await f.Store.WritesAsync()).Count, 1);
+}));
+
+tests.Add(("Submission process interruption and error responses require original-key manual recovery", async () =>
+{
+    using var f = new Fixture(); await f.Login(); await SubmissionCache(f);
+    var review = await f.Repository.ReviewCachedSubmissionAsync(Project, TaskPath.Split('/').Last(), 7);
+    var id = await f.Repository.QueueReviewedSubmissionAsync(review, "body");
+    foreach (var status in new[] { 408, 429, 500, 503 })
+    {
+        f.Handler.Route = _ => Task.FromResult(Error(status));
+        await f.Repository.ConfirmQueuedSubmissionAsync(id, true); Equal((await f.Store.WritesAsync()).Single().Status, "uncertain");
+        f.Handler.Route = _ => throw new InvalidOperationException("unexpected automatic retry"); await f.Repository.SyncAsync();
+    }
+    await f.Store.MarkWriteAsync(id, "sending");
+    f.Handler.Route = _ => throw new InvalidOperationException("interrupted send must not automatically restart"); await f.Repository.SyncAsync();
+    f.Handler.Route = request => { if (request.Method == "GET") return Task.FromResult(Reply(new JsonObject { ["revision"] = 8 })); Equal(request.Key, id); return Task.FromResult(Error(409)); };
+    await f.Repository.ConfirmQueuedSubmissionAsync(id, true); Equal((await f.Store.WritesAsync()).Single().Status, "conflict");
+}));
+
+tests.Add(("Submission invalid response and in-progress idempotency remain uncertain without background replay", async () =>
+{
+    using var f = new Fixture(); await f.Login(); await SubmissionCache(f);
+    var review = await f.Repository.ReviewCachedSubmissionAsync(Project, TaskPath.Split('/').Last(), 7);
+    var id = await f.Repository.QueueReviewedSubmissionAsync(review, "body");
+    f.Handler.Route = _ => Task.FromResult(Reply(new JsonObject()));
+    await f.Repository.ConfirmQueuedSubmissionAsync(id, true); Equal((await f.Store.WritesAsync()).Single().Status, "uncertain");
+    f.Handler.Route = _ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("invalid json") });
+    await f.Repository.ConfirmQueuedSubmissionAsync(id, true); Equal((await f.Store.WritesAsync()).Single().Status, "uncertain");
+    f.Handler.Route = _ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Conflict) { Content = new StringContent("{\"error\":{\"code\":\"INVALID_STATE\",\"message\":\"idempotency still processing\"}}", Encoding.UTF8, "application/json") });
+    await f.Repository.ConfirmQueuedSubmissionAsync(id, true); Equal((await f.Store.WritesAsync()).Single().Status, "uncertain");
+    f.Handler.Route = _ => throw new OperationCanceledException("synthetic send interruption");
+    await f.Repository.ConfirmQueuedSubmissionAsync(id, true); Equal((await f.Store.WritesAsync()).Single().Status, "uncertain");
+}));
+
+tests.Add(("Discard cannot remove an in-flight submission before its original result is recorded", async () =>
+{
+    using var f = new Fixture(); await f.Login(); await SubmissionCache(f);
+    var review = await f.Repository.ReviewCachedSubmissionAsync(Project, TaskPath.Split('/').Last(), 7);
+    var id = await f.Repository.QueueReviewedSubmissionAsync(review, "body"); var entered = NewSignal(); var release = NewSignal();
+    f.Handler.Route = async request => { Equal(request.Key, id); entered.SetResult(); await release.Task; return Reply(SubmissionSuccess(request)); };
+    var sending = f.Repository.ConfirmQueuedSubmissionAsync(id, true); await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    Equal((await f.Store.WritesAsync()).Single().Status, "sending");
+    var discard = f.Repository.ResolveAsync(id, null, true); True(!discard.IsCompleted);
+    release.SetResult(); await sending; await Reject(() => discard); Equal((await f.Store.WritesAsync()).Count, 0);
+}));
+
 var failed = 0;
 foreach (var (name, run) in tests)
 {
@@ -474,6 +605,19 @@ static TaskCompletionSource NewSignal() => new(TaskCreationOptions.RunContinuati
 static async Task Until(Func<Task<bool>> check) { for (var i = 0; i < 200; i++) { if (await check()) return; await Task.Delay(10); } throw new TimeoutException("Fixture condition never reached"); }
 static HttpResponseMessage Reply(JsonNode data) => new(HttpStatusCode.OK) { Content = new StringContent(new JsonObject { ["data"] = data }.ToJsonString(), Encoding.UTF8, "application/json") };
 static HttpResponseMessage Error(int status) => new((HttpStatusCode)status) { Content = new StringContent(new JsonObject { ["error"] = new JsonObject { ["code"] = "SYNTHETIC", ["message"] = "synthetic failure" } }.ToJsonString(), Encoding.UTF8, "application/json") };
+
+static JsonObject SubmissionSuccess(Request request)
+{
+    var sent = JsonNode.Parse(request.Body!)!["body"]!.DeepClone().AsObject();
+    sent.Remove("expectedRevision"); sent["submissionId"] = "77777777-7777-4777-8777-777777777777";
+    sent["taskId"] = TaskPath.Split('/').Last(); sent["submittedBy"] = "account-a"; return sent;
+}
+static JsonObject SubmissionItem(string material = "33333333-3333-4333-8333-333333333333", string version = "44444444-4444-4444-8444-444444444444") => new() { ["materialId"] = material, ["versionId"] = version, ["taskId"] = TaskPath.Split('/').Last(), ["name"] = "成果.docx", ["archivedAt"] = null, ["materialArchivedAt"] = null, ["deletedAt"] = null };
+static async Task SubmissionCache(Fixture f)
+{
+    await f.Store.SaveSnapshotAsync(TaskPath, new JsonObject { ["taskId"] = TaskPath.Split('/').Last(), ["revision"] = 7, ["assigneeId"] = "account-a", ["lifecycleState"] = "in_progress" });
+    await f.Store.SaveSnapshotAsync(TaskPath + "/files?limit=100", new JsonObject { ["items"] = new JsonArray(SubmissionItem()), ["nextCursor"] = null });
+}
 
 sealed record Request(string Method, string Path, string? Key, string? Body, string Query = "");
 sealed class Handler : HttpMessageHandler
