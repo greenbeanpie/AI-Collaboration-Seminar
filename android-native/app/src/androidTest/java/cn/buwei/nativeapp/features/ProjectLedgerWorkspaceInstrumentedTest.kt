@@ -30,7 +30,7 @@ class ProjectLedgerWorkspaceInstrumentedTest {
             compose.onNodeWithText("查看活动详情").performScrollTo().performClick(); compose.onNodeWithText("可读活动详情").assertExists()
             compose.onNodeWithText("下一页").performScrollTo().performClick(); compose.waitUntil(10000) { compose.onAllNodesWithText("成员已保存材料，版本 r4。").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithText("上一页").performScrollTo().performClick(); compose.waitUntil(10000) { compose.onAllNodesWithText("待开始 → 已完成").fetchSemanticsNodes().isNotEmpty() }
-            compose.onNodeWithText("事件类型：全部活动").performScrollTo().performClick(); compose.onNodeWithText("更新任务状态").performClick()
+            compose.onNodeWithText("事件类型：全部活动").performScrollTo().performClick(); compose.onNode(hasText("更新任务状态") and hasClickAction()).performClick()
             compose.waitUntil(10000) { calls.any { it.requestUrl?.queryParameter("type") == "task.status_changed" } }
             assertTrue(calls.any { it.requestUrl?.queryParameter("cursor") == "older" }); assertTrue(calls.all { it.method == "GET" }); assertTrue(calls.none { it.requestUrl?.queryParameter("actor") != null })
         } finally { server.shutdown() }

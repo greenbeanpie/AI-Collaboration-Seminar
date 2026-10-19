@@ -33,7 +33,7 @@ class ProjectOverviewWorkspaceInstrumentedTest {
         try {
             val repo = ClientRepository(InstrumentationRegistry.getInstrumentation().targetContext, server.url("/").toString().trimEnd('/'), "overview-${UUID.randomUUID()}-"); runBlocking { repo.exchange("fixture", "fixture") }
             compose.setContent { NativeTheme { Surface { ProjectOverviewWorkspace(repo, project) { navigated.add(it) } } } }
-            compose.waitUntil(10000) { compose.onAllNodesWithText("真实项目主目标").fetchSemanticsNodes().isNotEmpty() }
+            try { compose.waitUntil(10000) { compose.onAllNodesWithText("真实项目主目标").fetchSemanticsNodes().isNotEmpty() } } catch(e: Throwable) { throw AssertionError("GETs: ${calls.joinToString()}\n${compose.onRoot().printToString()}", e) }
             compose.onNodeWithText("查看任务").performScrollTo().performClick(); assertEquals("tasks", navigated.first())
             compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("最近保存的成果")); compose.onNodeWithText("最近保存的成果").assertExists()
             compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("查看全部活动")); compose.onNodeWithText("查看全部活动").performClick(); assertTrue(navigated.contains("ledger"))

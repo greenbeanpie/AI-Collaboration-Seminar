@@ -25,7 +25,7 @@ private fun ProjectOverviewContent(repository: ClientRepository, projectId: Stri
     var reads by remember { mutableStateOf<Map<String, JsonObject>>(emptyMap()) }; var errors by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     LaunchedEffect(refresh) {
         loading = true; errors = emptyMap()
-        suspend fun read(key: String, path: String) { try { reads = reads + (key to repository.get(path)) } catch(e: CancellationException) { throw e } catch(e: Exception) { reads = reads - key; errors = errors + (key to (e.message ?: "数据暂不可用")) } }
+        suspend fun read(key: String, path: String) { try { val value = repository.get(path); reads = reads + (key to value) } catch(e: CancellationException) { throw e } catch(e: Exception) { reads = reads - key; errors = errors + (key to (e.message ?: "数据暂不可用")) } }
         try { coroutineScope { listOf("project" to base, "goal" to "$base/goal", "graph" to "$base/tasks/graph", "sources" to "$base/sources?limit=3", "requirements" to "$base/requirement-sets", "events" to "$base/events?limit=3", "resources" to "$base/resource-library?limit=3").forEach { (key, path) -> launch { read(key, path) } } }
             val project = reads["project"]; if(project?.text("myRole") == "owner" || project?.obj("permissions")?.flag("teamManage") == true) read("invitations", "$base/invitation-requests") else reads = reads - "invitations"
         } finally { loading = false }
