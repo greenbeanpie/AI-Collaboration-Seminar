@@ -38,7 +38,7 @@ private fun RichNodeEditor(node:JsonObject,depth:Int,onChange:(JsonObject)->Unit
  val type=node.text("type");val children=node["content"]as? JsonArray
  if(depth>30){Text("保留较深层级内容（未展开编辑）");return}
  when{
-  type=="text"->{OutlinedTextField(node.text("text"),{newText->onChange(JsonObject(node+("text" to JsonPrimitive(newText))))},modifier=Modifier.fillMaxWidth(),label={Text(if(node["marks"]is JsonArray)"文字 · 保留格式标记"else"文字")},minLines=1)}
+  type=="text"->{OutlinedTextField(node.text("text"),{newText->onChange(editRichText(node,emptyList(),newText))},modifier=Modifier.fillMaxWidth(),label={Text(if(node["marks"]is JsonArray)"文字 · 保留格式标记"else"文字")},minLines=1)}
   children!=null->{
    val names=mapOf("doc" to "正文","paragraph" to "段落","heading" to "标题","bulletList" to "无序列表","orderedList" to "有序列表","listItem" to "列表项","table" to "表格","tableRow" to "行","tableCell" to "单元格","tableHeader" to "表头","blockquote" to "引用","codeBlock" to "代码块")
    Column(Modifier.fillMaxWidth().padding(start=if(depth==0)0.dp else 6.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
@@ -51,4 +51,13 @@ private fun RichNodeEditor(node:JsonObject,depth:Int,onChange:(JsonObject)->Unit
   type=="hardBreak"->Text("↵",style=MaterialTheme.typography.bodySmall)
   else->Text("${if(type.isBlank())"附加"else type}节点 · 已保留${node.obj("attrs").text("label").takeIf{it.isNotBlank()}?.let{"：$it"}.orEmpty()}",style=MaterialTheme.typography.bodySmall)
  }
+}
+
+/** A narrow edit changes one text leaf while retaining every sibling and metadata value. */
+internal fun editRichText(node:JsonObject,indices:List<Int>,text:String):JsonObject{
+ if(indices.isEmpty()){require(node.text("type")=="text"){"Only text nodes can be changed"};return JsonObject(node+("text" to JsonPrimitive(text)))}
+ val children=node["content"]as? JsonArray?:error("Missing rich document content")
+ val index=indices.first();require(index in children.indices){"Text position outside document"}
+ val child=children[index]as? JsonObject?:error("Invalid document node")
+ return JsonObject(node+("content" to JsonArray(children.toMutableList().apply{set(index,editRichText(child,indices.drop(1),text))})))
 }
