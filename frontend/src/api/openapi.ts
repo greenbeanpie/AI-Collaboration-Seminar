@@ -484,6 +484,8 @@ export interface paths {
                     "application/json": {
                         codeChallenge: string;
                         state: string;
+                        /** @enum {string} */
+                        clientType?: "android" | "windows";
                     };
                 };
             };
@@ -14017,6 +14019,10 @@ export interface components {
             data: {
                 state: string;
                 expiresAt: string;
+                /** @enum {string} */
+                clientType: "android" | "windows";
+                /** @enum {string} */
+                callbackBase: "buwei-native-preview://auth/callback" | "buwei-windows-native://auth/callback";
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;

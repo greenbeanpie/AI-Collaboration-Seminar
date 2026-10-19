@@ -16,6 +16,37 @@ afterEach(() => { cleanup(); clients.splice(0).forEach(client => client.clear())
 const response = (data: unknown) => Response.json({ data, requestId: 'native-test' });
 
 describe('Native browser authorization page', () => {
+  it('approves Windows using its own callback and client label', async () => {
+    const callback = `buwei-windows-native://auth/callback?code=${'c'.repeat(43)}&state=${state}`;
+    vi.stubGlobal('fetch', vi.fn(async (_url: unknown, init?: RequestInit) => init?.method === 'POST' ? response({ redirectUri: callback }) : response({ clientType: 'windows', callbackBase: 'buwei-windows-native://auth/callback', state, expiresAt: '2026-12-01T00:00:00Z' })));
+    setup(); fireEvent.click(await screen.findByRole('button', { name: '确认登录此账户' }));
+    expect(await screen.findByRole('link', { name: '返回补位 Windows 客户端' })).toHaveAttribute('href', callback);
+  });
+  it('cancels Windows authorization through the fixed Windows callback', async () => {
+    const fetch = vi.fn(async () => response({ clientType: 'windows', callbackBase: 'buwei-windows-native://auth/callback', state, expiresAt: '2026-12-01T00:00:00Z' }));
+    vi.stubGlobal('fetch', fetch); setup(); fireEvent.click(await screen.findByRole('button', { name: '取消' }));
+    expect(screen.getByRole('link', { name: '返回应用' })).toHaveAttribute('href', `buwei-windows-native://auth/callback?error=access_denied&state=${state}`);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it.each([
+    `buwei-native-preview://auth/callback?code=${'c'.repeat(43)}&state=${state}`,
+    `buwei-windows-native://auth/callback?code=${'c'.repeat(43)}&state=wrong`,
+    `buwei-windows-native://user@auth/callback?code=${'c'.repeat(43)}&state=${state}`,
+    `buwei-windows-native://auth/callback?code=${'c'.repeat(43)}&state=${state}#fragment`,
+    `buwei-windows-native://auth/callback?code=${'c'.repeat(43)}&state=${state}&state=${state}`,
+    `buwei-windows-native://auth/callback?code=invalid&state=${state}`,
+  ])('rejects mismatched Windows approval %s', async redirectUri => {
+    vi.stubGlobal('fetch', vi.fn(async (_url: unknown, init?: RequestInit) => init?.method === 'POST' ? response({ redirectUri }) : response({ clientType: 'windows', callbackBase: 'buwei-windows-native://auth/callback', state, expiresAt: '2026-12-01T00:00:00Z' })));
+    setup(); fireEvent.click(await screen.findByRole('button', { name: '确认登录此账户' }));
+    expect(await screen.findByText('应用回调地址不匹配，请重新登录。')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: '返回补位 Windows 客户端' })).not.toBeInTheDocument();
+  });
+  it('refuses an arbitrary callback base before approval or cancellation', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => response({ clientType: 'windows', callbackBase: 'https://evil.invalid', state, expiresAt: '2026-12-01T00:00:00Z' })));
+    setup(); expect(await screen.findByText('应用回调地址不匹配，请重新登录。')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '确认登录此账户' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '取消' })).not.toBeInTheDocument();
+  });
   it('preserves the app authorization route through browser login', () => {
     session.data = null; const fetch = vi.fn(); vi.stubGlobal('fetch', fetch); setup();
     expect(screen.getByRole('link', { name: '先登录浏览器账户' })).toHaveAttribute('href', `/login?returnTo=${encodeURIComponent(`/app/native-authorize?transaction=${id}`)}`);
