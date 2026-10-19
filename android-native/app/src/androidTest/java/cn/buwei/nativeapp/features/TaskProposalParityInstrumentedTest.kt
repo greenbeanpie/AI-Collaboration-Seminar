@@ -71,7 +71,7 @@ class TaskProposalParityInstrumentedTest {
     private fun tap(text:String){compose.onNodeWithText(text).performScrollTo().performClick()}
     private fun screen(content:@Composable ()->Unit){compose.setContent{NativeTheme{Surface{Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())){content()}}}}}
     private fun showControls(){screen{TaskProposalControls(repository,base,current.get(),listOf(buildJsonObject{put("taskId",priorTask);put("title","既有前置任务")}),emptyList()){changed.incrementAndGet()}};tap("修正建议、部分应用或重新反馈")}
-    private fun field(label:String,token:String)=compose.onNode(hasText(label) and hasSetTextAction() and hasAnyAncestor(hasTestTag("proposal-row-$token")))
+    private fun field(label:String,token:String)=compose.onNode(hasTestTag("reference-input:$label") and hasAnyAncestor(hasTestTag("proposal-row-$token")))
     @Test fun partialApplyRequiresConfirmationAndSendsExplicitEmptyCategories(){
         showControls();compose.onNodeWithTag("proposal-select-tasks:second").performScrollTo().performClick();tap("应用选中条目");assertTrue(writes.isEmpty());compose.onNodeWithText("取消").performClick();assertTrue(writes.isEmpty())
         tap("应用选中条目");compose.onNodeWithText("确认").performClick();waitFor("选中条目已应用");compose.waitUntil(10000){changed.get()>0}

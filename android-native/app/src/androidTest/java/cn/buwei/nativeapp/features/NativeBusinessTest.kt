@@ -154,7 +154,7 @@ class NativeBusinessTest {
  }
  @Test fun conversationSendsPollsAndDisplaysNativeAnswer(){
   compose.setContent{cn.buwei.nativeapp.NativeTheme{Surface(Modifier.fillMaxSize()){AiConversationScreen(repository,project)}}}
-  compose.onNodeWithText("询问项目 AI").performTextInput("Explain fixture");closeSoftKeyboard();compose.onNodeWithText("发送").performClick()
+  compose.onNodeWithText("询问项目 AI").performTextInput("Explain fixture");closeSoftKeyboard();compose.onNodeWithText("发送").performScrollTo().performClick()
   awaitText("Fixture answer");compose.onNodeWithText("Native response").performScrollTo().assertIsDisplayed();screenshot("ai-conversation")
  }
 }

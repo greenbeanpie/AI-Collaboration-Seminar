@@ -8,6 +8,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
 import cn.buwei.nativeapp.data.ClientRepository
 import cn.buwei.nativeapp.data.NativeDraftStore
@@ -23,6 +25,7 @@ import kotlinx.serialization.json.*
 @Composable
 fun AiConversationScreen(repository:ClientRepository,projectId:String,onResource:(String)->Unit = {}){
  val base="/api/v1/projects/${Uri.encode(projectId)}/ai-chat";val scope=rememberCoroutineScope()
+ val focus=LocalFocusManager.current;val keyboard=LocalSoftwareKeyboardController.current
  var messages by remember(projectId,repository.accountId){mutableStateOf<List<JsonObject>>(emptyList())};var cursor by remember{mutableStateOf<String?>(null)};var pending by remember{mutableStateOf<String?>(null)}
  var resumedJobs by remember(projectId,repository.accountId){mutableStateOf(emptyMap<String,String>())}
  var input by rememberSaveable(projectId,repository.accountId){mutableStateOf("")};var refresh by remember{mutableIntStateOf(0)};var busy by remember{mutableStateOf(false)};var loading by remember{mutableStateOf(true)};var error by remember{mutableStateOf<String?>(null)};var confirmClear by remember{mutableStateOf(false)}
@@ -55,7 +58,7 @@ fun AiConversationScreen(repository:ClientRepository,projectId:String,onResource
    pending?.takeIf{id->messages.none{it.text("role")=="user"&&(resumedJobs[it.text("questionId")]?:it.text("jobId"))==id}}?.let{id->item{NativeJobExecution(repository,id,onResumed={pending=it},onSettled={pending=null;refresh++})}}
    item(key="composer"){Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(10.dp)){
   ReferenceOutlinedTextField(input,{if(it.length<=4000){input=it;if(owner!=null)drafts.scheduleSave("project-chat:$projectId",buildJsonObject{put("input",it)},owner,epoch){failure->error=failure.message}}},Modifier.fillMaxWidth(),label="询问项目 AI",minLines=2,maxLines=5,supportingText={Text("${input.length} / 4000")},enabled=!busy&&draftReady)
-  Button({if(!busy){busy=true;error=null;scope.launch{try{check(repository.accountId==owner&&repository.epoch==epoch){"账户已变化"};val response=repository.requestDurably("project-chat:$projectId","POST",base,buildJsonObject{put("content",input.trim())});pending=response.text("jobId").takeIf{it.isNotBlank()};input="";drafts.remove("project-chat:$projectId",owner?:error("请登录"),epoch);readHistory()}catch(e:CancellationException){throw e}catch(e:Exception){error=(e.message?:"请求失败")+"；内容已保留。请先刷新确认服务端状态，再决定是否重试。"}finally{busy=false}}}},enabled=draftReady&&!busy&&pending==null&&input.isNotBlank()){Text(if(busy)"发送中"else"发送")}
+  Button({if(!busy){focus.clearFocus();keyboard?.hide();busy=true;error=null;scope.launch{try{check(repository.accountId==owner&&repository.epoch==epoch){"账户已变化"};val response=repository.requestDurably("project-chat:$projectId","POST",base,buildJsonObject{put("content",input.trim())});pending=response.text("jobId").takeIf{it.isNotBlank()};input="";drafts.remove("project-chat:$projectId",owner?:error("请登录"),epoch);readHistory()}catch(e:CancellationException){throw e}catch(e:Exception){error=(e.message?:"请求失败")+"；内容已保留。请先刷新确认服务端状态，再决定是否重试。"}finally{busy=false}}}},enabled=draftReady&&!busy&&pending==null&&input.isNotBlank()){Text(if(busy)"发送中"else"发送")}
    }}
   }
  }
