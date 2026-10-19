@@ -192,10 +192,61 @@ private fun MaterialEditor(repository:ClientRepository,path:String,material:Json
 
 @Composable
 internal fun StructuredValue(value:JsonElement,depth:Int=0){
- if(depth>8){Text("内容层级过深，请打开对应详情");return}
+ if(depth>8)return
  when(value){
-  is JsonObject->Column(verticalArrangement=Arrangement.spacedBy(6.dp)){value.forEach{(key,v)->if(v!=JsonNull){if(v is JsonPrimitive){SelectionContainer{Text("${label(key)}：${v.content}",style=MaterialTheme.typography.bodyMedium)}}else{var open by remember(key){mutableStateOf(depth<1)};TextButton({open=!open}){Text("${label(key)} ${if(open)"−"else"+"}")};if(open)Column(Modifier.padding(start=10.dp)){StructuredValue(v,depth+1)}}}}}
-  is JsonArray->value.forEachIndexed{i,v->Card(Modifier.fillMaxWidth()){Column(Modifier.padding(8.dp)){Text("${i+1}",style=MaterialTheme.typography.labelSmall);StructuredValue(v,depth+1)}}}
+  is JsonObject->{
+   if(value.text("type")=="doc"){ReadOnlyRichDocument(value);return}
+   val markdown=value.text("markdown")
+   val document=value["doc"]as? JsonObject
+   val metadata=value.entries.filter{(key,v)->businessFieldVisible(key)&&key!="markdown"&&v!=JsonNull&&!(v is JsonPrimitive&&v.contentOrNull.isNullOrBlank())&&!(v is JsonArray&&v.isEmpty())&&!(v is JsonObject&&v.isEmpty())}
+   val priority=listOf("title","name","displayName","status","lifecycleState","revision","version","purpose","kind")
+   Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(10.dp)){
+    metadata.filter{it.value is JsonPrimitive}.sortedBy{priority.indexOf(it.key).takeIf{i->i>=0}?:priority.size}.forEach{(key,v)->
+     val text=businessValue(key,v.jsonPrimitive)
+     if(key in listOf("body","content","text","summary","report","feedback","answer","question")){
+      Text(label(key),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.onSurfaceVariant)
+      NativeMarkdown(text)
+     }else SelectionContainer{Text("${label(key)}：$text",style=if(key in listOf("title","name"))MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium)}
+    }
+    if(markdown.isNotBlank()||document!=null){
+     Text("正文",style=MaterialTheme.typography.titleMedium)
+     if(markdown.isNotBlank())NativeMarkdown(markdown)else document?.let{ReadOnlyRichDocument(it)}
+    }
+    metadata.filter{it.value !is JsonPrimitive}.forEach{(key,v)->
+     if(key=="currentVersion"){
+      HorizontalDivider();Text("当前版本",style=MaterialTheme.typography.titleSmall)
+      StructuredValue(v,depth+1)
+     }else{
+      var open by remember(key){mutableStateOf(key in listOf("attachments","messages","turns","report","result","ticket","goal","preview","requirements","scores","references"))}
+      TextButton({open=!open},contentPadding=PaddingValues(0.dp)){Text(label(key)+(if(v is JsonArray)" · ${v.size}"else"")+if(open)" −"else" +")}
+      if(open)Column(Modifier.fillMaxWidth().padding(start=8.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){StructuredValue(v,depth+1)}
+     }
+    }
+   }
+  }
+  is JsonArray->value.forEach{v->if(v!=JsonNull){if(v is JsonPrimitive)SelectionContainer{Text(v.contentOrNull.orEmpty())}else Card(Modifier.fillMaxWidth()){Column(Modifier.padding(12.dp)){StructuredValue(v,depth+1)}}}}
   is JsonPrimitive->SelectionContainer{Text(value.contentOrNull?:"—")}
+ }
+}
+
+/** Native content presentation never exposes the editor's JSON schema or node attributes. */
+@Composable
+private fun ReadOnlyRichDocument(node:JsonObject,depth:Int=0){
+ if(depth>30)return
+ val children=(node["content"]as? JsonArray).orEmpty().mapNotNull{it as? JsonObject}
+ val text=richDocumentText(node)
+ when(node.text("type")){
+  "doc"->Column(verticalArrangement=Arrangement.spacedBy(8.dp)){children.forEach{ReadOnlyRichDocument(it,depth+1)}}
+  "heading"->if(text.isNotBlank())SelectionContainer{Text(text,style=if((node.obj("attrs")["level"]as? JsonPrimitive)?.intOrNull==1)MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium)}
+  "paragraph","text"->if(text.isNotBlank())SelectionContainer{Text(text)}
+  "codeBlock"->if(text.isNotBlank())Surface(color=MaterialTheme.colorScheme.surfaceContainer,shape=MaterialTheme.shapes.small){SelectionContainer{Text(text,Modifier.padding(10.dp),fontFamily=androidx.compose.ui.text.font.FontFamily.Monospace)}}
+  "table"->if(text.isNotBlank())Surface(color=MaterialTheme.colorScheme.surfaceContainer,shape=MaterialTheme.shapes.small){SelectionContainer{Text(text,Modifier.padding(10.dp))}}
+  "bulletList","orderedList"->Column(verticalArrangement=Arrangement.spacedBy(6.dp)){children.forEachIndexed{i,child->Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Text(if(node.text("type")=="orderedList")"${i+1}."else"•");Column(Modifier.weight(1f)){ReadOnlyRichDocument(child,depth+1)}}}}
+  "blockquote"->Column(Modifier.padding(start=12.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){children.forEach{ReadOnlyRichDocument(it,depth+1)}}
+  "citation","reference","sourceCitation"->{val attrs=node.obj("attrs");val quote=attrs.text("quote");val title=attrs.text("label").ifBlank{attrs.text("title")};Text(if(title.isBlank())"引用资料"else"引用：$title",style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary);if(quote.isNotBlank())SelectionContainer{Text(quote,style=MaterialTheme.typography.bodySmall)}}
+  "image"->{val attrs=node.obj("attrs");Text(attrs.text("alt").ifBlank{attrs.text("title")}.let{if(it.isBlank())"图片附件"else"图片：$it"},style=MaterialTheme.typography.bodySmall)}
+  "horizontalRule"->HorizontalDivider()
+  "hardBreak"->Spacer(Modifier.height(4.dp))
+  else->if(children.isNotEmpty())Column(verticalArrangement=Arrangement.spacedBy(6.dp)){children.forEach{ReadOnlyRichDocument(it,depth+1)}}
  }
 }
