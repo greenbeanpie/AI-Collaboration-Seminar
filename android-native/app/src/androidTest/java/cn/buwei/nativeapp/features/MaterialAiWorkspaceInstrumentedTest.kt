@@ -19,21 +19,23 @@ import org.junit.Assert.*
 import java.util.UUID
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** Existing backend routes only, served on loopback; no model or production requests. */
 class MaterialAiWorkspaceInstrumentedTest {
  @get:Rule val compose=createComposeRule()
  private lateinit var server:MockWebServer
  private lateinit var repository:ClientRepository
- private val project="11111111-1111-4111-8111-111111111111"
- private val material="22222222-2222-4222-8222-222222222222"
- private val session="33333333-3333-4333-8333-333333333333"
- private val run="44444444-4444-4444-8444-444444444444"
- private val job="55555555-5555-4555-8555-555555555555"
- private val user="66666666-6666-4666-8666-666666666666"
+ private val project=UUID.randomUUID().toString()
+ private val material=UUID.randomUUID().toString()
+ private val session=UUID.randomUUID().toString()
+ private val run=UUID.randomUUID().toString()
+ private val job=UUID.randomUUID().toString()
+ private val user=UUID.randomUUID().toString()
  private val gets=ConcurrentLinkedQueue<String>()
  private val writes=ConcurrentLinkedQueue<Pair<String,JsonObject>>()
  private val adopted=AtomicReference<JsonObject?>(null)
+ private val adoptionFinished=AtomicBoolean(false)
  @Volatile private var created=false
  @Volatile private var conflict=false
  @Volatile private var missingCursor=false
@@ -64,12 +66,12 @@ class MaterialAiWorkspaceInstrumentedTest {
   }};server.start();repository=ClientRepository(context,server.url("/").toString().trimEnd('/'),"material-ai-${UUID.randomUUID()}-");runBlocking{repository.exchange("fixture","fixture")}
  }
  @After fun teardown(){server.shutdown()}
- private fun await(text:String){compose.waitUntil(15000){compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()}}
+ private fun await(text:String){try{compose.waitUntil(15000){compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()}}catch(failure:Throwable){throw AssertionError("Expected UI text: $text\nGETs: ${gets.joinToString()}\nWrites: ${writes.joinToString{it.first}}\n${compose.onRoot().printToString()}",failure)}}
  private fun click(text:String){await(text);compose.onNode(hasText(text) and hasClickAction()).performScrollTo().performClick()}
- private fun showAdoption(){compose.setContent{NativeTheme{Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())){AgentDraftAdoption(repository,project,run,"succeeded",buildJsonObject{put("doc",originalDoc)},listOf(target())){}}}}}
+ private fun showAdoption(){compose.setContent{NativeTheme{Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())){AgentDraftAdoption(repository,project,run,"succeeded",buildJsonObject{put("doc",originalDoc)},listOf(target())){adoptionFinished.set(true)}}}}}
  private fun chooseTarget(){click("请选择（可留空）");click("目标成果材料")}
  @Test fun incompletePaginationFailsThroughTheNetworkReader(){missingCursor=true;runBlocking{val failure=runCatching{aiAllPages(repository,"/api/v1/projects/$project/agent-sessions?limit=100")}.exceptionOrNull();assertNotNull(failure);assertTrue(failure!!.message.orEmpty().contains("分页位置"))};assertTrue(writes.isEmpty())}
  @Test fun pendingDetailRunSurvivesCompletedListSummary(){compose.setContent{NativeTheme{Surface(Modifier.fillMaxSize()){MaterialAiWorkspace(repository,project)}}};await("确认发起协作");compose.waitUntil{compose.onAllNodes(hasText("确认发起协作") and isEnabled()).fetchSemanticsNodes().isNotEmpty()};click("确认发起协作");compose.onNodeWithText("确认").performClick();await("提交本轮回答");compose.waitUntil(10000){gets.contains("/api/v1/jobs/$job")};compose.onNode(hasSetTextAction() and hasText("回答 AI 的问题")).performScrollTo().performTextInput("回答仍在等待上一轮完成");closeSoftKeyboard();compose.onNodeWithText("提交本轮回答").assertIsNotEnabled();assertEquals(1,writes.size);assertTrue(gets.contains("/api/v1/projects/$project/agent-sessions/$session"))}
- @Test fun reviewedUneditedRichDraftAdoptsOriginalDocWithoutPlainMarkdown(){showAdoption();await("核对并编辑草稿 Markdown");chooseTarget();compose.onNodeWithText("确认复核并采纳").assertIsNotEnabled();compose.onNode(isToggleable()).performScrollTo().performClick();click("确认复核并采纳");compose.onNodeWithText("确认采纳").performClick();compose.waitUntil(10000){adopted.get()!=null};val body=adopted.get()!!;assertEquals(originalDoc,body["doc"]);assertFalse(body.containsKey("markdown"));assertEquals(4,body["expectedRevision"]!!.jsonPrimitive.int);assertTrue(body.flag("reviewed"));assertEquals(material,body.text("materialId"))}
+ @Test fun reviewedUneditedRichDraftAdoptsOriginalDocWithoutPlainMarkdown(){showAdoption();await("核对并编辑草稿 Markdown");chooseTarget();compose.onNodeWithText("确认复核并采纳").assertIsNotEnabled();compose.onNode(isToggleable()).performScrollTo().performClick();click("确认复核并采纳");compose.onNodeWithText("确认采纳").performClick();compose.waitUntil(10000){adopted.get()!=null&&adoptionFinished.get()};val body=adopted.get()!!;assertEquals(originalDoc,body["doc"]);assertFalse(body.containsKey("markdown"));assertEquals(4,body["expectedRevision"]!!.jsonPrimitive.int);assertTrue(body.flag("reviewed"));assertEquals(material,body.text("materialId"))}
  @Test fun revisionConflictRetainsEditedTextAndRequiresReviewAgain(){conflict=true;showAdoption();await("核对并编辑草稿 Markdown");chooseTarget();compose.onNode(hasSetTextAction() and hasText("核对并编辑草稿 Markdown")).performScrollTo().performTextReplacement("Edited **body**");closeSoftKeyboard();compose.onNode(isToggleable()).performScrollTo().performClick();click("确认复核并采纳");compose.onNodeWithText("确认采纳").performClick();await("材料版本已变化，请刷新后重新核对再采纳；编辑仍保留，请先核对历史版本并重新复核。");compose.onNode(hasSetTextAction() and hasText("核对并编辑草稿 Markdown")).assertTextContains("Edited **body**");compose.onNode(isToggleable()).assertIsOff();compose.onNodeWithText("确认复核并采纳").assertIsNotEnabled();assertTrue(writes.isEmpty());assertNull(adopted.get())}
 }
