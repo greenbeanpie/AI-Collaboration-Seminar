@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.espresso.Espresso.closeSoftKeyboard
 import cn.buwei.nativeapp.data.ClientRepository
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.*
@@ -108,7 +109,7 @@ class NativeBusinessTest {
   compose.setContent{MaterialTheme{Surface(Modifier.fillMaxSize()){FeatureScreen(repository,"data",project,{},{})}}}
   compose.onNodeWithText("成果材料").performScrollTo().performClick();awaitText("Fixture material")
   compose.onNodeWithText("查看详情").performScrollTo().performClick();awaitText("编辑正文")
-  compose.onNodeWithText("编辑正文").performScrollTo().performClick();compose.onNodeWithText("body before").performScrollTo().performTextReplacement("body after")
+  compose.onNodeWithText("编辑正文").performScrollTo().performClick();compose.onNodeWithText("body before").performScrollTo().performTextReplacement("body after");closeSoftKeyboard()
   screenshot("rich-editor");compose.onNodeWithText("保存新版本").performScrollTo().performClick()
   compose.waitUntil(15000){received.get()!=null}
   val save=received.get()!!.obj("body");assertEquals(richDoc().toString().replace("body before","body after"),save.obj("doc").toString());assertFalse(save.containsKey("markdown"));assertEquals(1,save["expectedRevision"]!!.jsonPrimitive.int)
@@ -117,7 +118,7 @@ class NativeBusinessTest {
  @Test fun creationDraftPreviewsThenCommitsOnlyAfterConfirmation(){
   val selected=AtomicReference<String?>(null)
   compose.setContent{MaterialTheme{Surface(Modifier.fillMaxSize()){ProjectCreationScreen(repository){selected.set(it)}}}}
-  compose.onNodeWithText("名称 *").performScrollTo().performTextInput("Fixture project")
+  compose.onNodeWithText("名称 *").performScrollTo().performTextInput("Fixture project");closeSoftKeyboard()
   compose.onNodeWithText("保存创建草稿").performScrollTo().performClick();compose.onNodeWithText("确认").performClick()
   awaitText("生成手动预览");compose.onNodeWithText("生成手动预览").performScrollTo().performClick();compose.onNodeWithText("确认").performClick()
   awaitText("确认预览并创建项目");compose.onNodeWithText("确认预览并创建项目").performScrollTo().performClick();compose.onNodeWithText("确认").performClick()
@@ -125,7 +126,7 @@ class NativeBusinessTest {
  }
  @Test fun conversationSendsPollsAndDisplaysNativeAnswer(){
   compose.setContent{MaterialTheme{Surface(Modifier.fillMaxSize()){AiConversationScreen(repository,project)}}}
-  compose.onNodeWithText("询问项目 AI").performTextInput("Explain fixture");compose.onNodeWithText("发送").performClick()
+  compose.onNodeWithText("询问项目 AI").performTextInput("Explain fixture");closeSoftKeyboard();compose.onNodeWithText("发送").performClick()
   awaitText("Fixture answer");compose.onNodeWithText("Native response").assertIsDisplayed();screenshot("ai-conversation")
  }
 }
