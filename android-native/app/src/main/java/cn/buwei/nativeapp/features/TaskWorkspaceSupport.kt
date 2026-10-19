@@ -47,7 +47,3 @@ internal fun twState(row:JsonObject)=mapOf("open" to "待领取","in_progress" t
 @Composable internal fun TaskWorkspaceNamedValues(value:JsonElement?,names:Map<String,String> = emptyMap()){
  when(value){is JsonObject->value.forEach{(key,v)->if(!key.endsWith("Id")&&!key.endsWith("Ids")&&key !in setOf("revision","profileStamp")){Text(names[key]?:mapOf("status" to "状态","summary" to "概述","steps" to "步骤","body" to "内容","feedback" to "反馈","criteria" to "验收标准","limitations" to "限制","plan" to "计划","title" to "标题","description" to "说明","text" to "正文")[key]?:key,style=MaterialTheme.typography.labelMedium);TaskWorkspaceNamedValues(v,names)}};is JsonArray->value.forEach{TaskWorkspaceNamedValues(it,names)};is JsonPrimitive->if(value!=JsonNull)NativeMarkdown(value.content);else->Unit}
 }
-
-
-
-

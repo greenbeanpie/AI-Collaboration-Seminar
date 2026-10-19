@@ -63,4 +63,3 @@ import java.time.Instant
  error?.let{Text(it,color=MaterialTheme.colorScheme.error)}
  if(confirm)AlertDialog(onDismissRequest={confirm=false},title={Text("更新设备项目授权？")},text={Text("未选择的项目将撤销授权，并停止对应项目的未结束交接。")},confirmButton={TextButton({confirm=false;busy=true;scope.launch{try{check(repository.accountId==owner&&repository.epoch==epoch){"账户已变化"};repository.requestDurably("bridge","POST",path,buildJsonObject{put("projectIds",JsonArray(selected.map(::JsonPrimitive)))});options=null;onSaved()}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}finally{busy=false}}}){Text("确认")}},dismissButton={TextButton({confirm=false}){Text("返回")}})
 }
-

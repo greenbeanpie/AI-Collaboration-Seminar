@@ -48,5 +48,3 @@ import kotlinx.serialization.json.*
   if(cursor!=null)OutlinedButton({action{page(true)}},enabled=!busy){Text("加载更早通知")}
  }
 }
-
-

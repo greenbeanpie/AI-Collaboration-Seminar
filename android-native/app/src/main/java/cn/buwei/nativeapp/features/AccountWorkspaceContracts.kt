@@ -30,5 +30,3 @@ internal fun accountImportFields(profile:JsonObject,candidate:JsonObject,fields:
  next["visibility"]=JsonObject(visibility);if(fields.any{it in listOf("major","specialties")})next["aiUseAllowed"]=JsonPrimitive(false)
  return JsonObject(next)
 }
-
-

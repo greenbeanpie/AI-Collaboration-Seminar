@@ -76,4 +76,3 @@ internal fun creationSafeFileName(name:String):String {
  val extension=safe.substringAfterLast('.',"").take(12)
  return if(safe.length<=180)safe else if(extension.isNotBlank())safe.substringBeforeLast('.').take(179-extension.length)+"."+extension else safe.take(180)
 }
-

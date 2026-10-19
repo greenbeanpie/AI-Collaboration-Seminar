@@ -41,4 +41,3 @@ internal suspend fun supportUploadImage(repository:ClientRepository,ticketId:Str
  if(opened)AlertDialog(onDismissRequest={opened=false},title={Text("工单图片")},text={bitmap?.let{Image(it.asImageBitmap(),"工单附件",Modifier.fillMaxWidth().heightIn(max=480.dp))}},confirmButton={TextButton({opened=false}){Text("关闭")}})
  DisposableEffect(bitmap){val held=bitmap;onDispose{held?.recycle()}}
 }
-

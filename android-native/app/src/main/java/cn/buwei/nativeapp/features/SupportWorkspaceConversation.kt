@@ -41,4 +41,3 @@ import kotlinx.serialization.json.*
   else->{uncertain=true;persist();try{repository.networkJson("POST","$path/messages",buildJsonObject{put("body",body.trim())},expectedOwner=owner,expectedEpoch=epoch);body="";uncertain=false;persist();reload()}catch(e:ApiException){if(e.status in 400..499){uncertain=false;persist()};throw e}}
  }}}){Text("确认")}},dismissButton={TextButton({confirmation=null}){Text("返回")}})}
 }
-

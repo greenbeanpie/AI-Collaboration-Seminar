@@ -109,9 +109,3 @@ internal suspend fun taskWorkspaceAllPages(repository:ClientRepository,path:Stri
  }}}}
 }
 @Composable private fun TaskWorkspaceAssistance(repository:ClientRepository,base:String,task:JsonObject){val path="$base/collaboration/tasks/${Uri.encode(task.twText("taskId"))}/assistance-plan";var state by remember{mutableStateOf<JsonObject?>(null)};var refresh by remember{mutableIntStateOf(0)};var error by remember{mutableStateOf<String?>(null)};LaunchedEffect(path,refresh){try{state=repository.get(path);error=null}catch(e:CancellationException){throw e}catch(e:Exception){error=e.message}};error?.let{Text(it,color=MaterialTheme.colorScheme.error)};state?.let{Text("计划状态：${it.twText("status")}");val plan=it["plan"] as? JsonObject;if(plan!=null){if(plan["stale"]?.jsonPrimitive?.booleanOrNull==true)Text("项目上下文已变化，以下计划可能过时。",color=MaterialTheme.colorScheme.error);NativeMarkdown(plan.twText("markdown"))};if(it.twText("error").isNotBlank())Text(it.twText("error"),color=MaterialTheme.colorScheme.error)};TextButton({refresh++}){Text("刷新计划")};TaskWorkspaceAction(repository,"生成任务辅助计划",path,buildJsonObject{put("expectedRevision",twRevision(task));put("regenerate",state?.get("plan") is JsonObject)},enabled=state!=null&&state?.twText("status") !in listOf("disabled","queued","running"),confirmation="将调用项目配置的 AI，可能产生费用。计划仅作辅助，不会自动提交成果。",onSuccess={state=it})}
-
-
-
-
-
-

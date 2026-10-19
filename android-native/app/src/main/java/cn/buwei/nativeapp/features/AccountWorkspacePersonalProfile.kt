@@ -43,4 +43,3 @@ import kotlinx.serialization.json.*
   chosen.startsWith("import:")->{val id=chosen.substringAfter(':');val candidate=candidates.first{it.text("candidateId")==id};val fields=selections[id].orEmpty();profile=accountImportFields(profile!!,candidate,fields);imports=JsonArray(imports.filter{it.jsonObject.text("candidateId")!=id}+buildJsonObject{put("candidateId",id);put("fields",JsonArray(fields.map(::JsonPrimitive)))});notice="已复制到草稿；导入的专业与技能未公开，AI授权已关闭。"}
  }}}){Text("确认")}},dismissButton={TextButton({confirmation=null}){Text("返回")}})}
 }
-
