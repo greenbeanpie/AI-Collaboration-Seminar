@@ -6,6 +6,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import cn.buwei.nativeapp.NativeAiReferenceBadge
+import cn.buwei.nativeapp.ReferenceFieldLabel
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import cn.buwei.nativeapp.data.ClientRepository
@@ -38,7 +40,7 @@ import kotlinx.serialization.json.*
   if(detailName!=null&&!loading&&error==null){
    if(profile==null)Text("未找到可查看的账号")else profile?.let{person->Card(Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
     Text(person["displayName"]?.jsonPrimitive?.contentOrNull.orEmpty(),style=MaterialTheme.typography.titleLarge);Text("@${person["username"]?.jsonPrimitive?.contentOrNull.orEmpty()}")
-    peopleWorkspacePublicFields(person).forEach{(key,label,value)->Text(label,style=MaterialTheme.typography.titleMedium);if(key=="bio"&&value.isNotBlank())HelpWorkspaceMarkdown(value,hideImages=true)else Text(value.ifBlank{"暂未填写"})}
+    peopleWorkspacePublicFields(person).forEach{(key,label,value)->Text(label,style=MaterialTheme.typography.titleMedium);if(person.flag("aiUseAllowed"))NativeAiReferenceBadge();if(key=="bio"&&value.isNotBlank())HelpWorkspaceMarkdown(value,hideImages=true)else Text(value.ifBlank{"暂未填写"})}
    }}}
    TextButton({load(detailName!!,true)},enabled=!loading){Text("刷新公开资料")}
   }

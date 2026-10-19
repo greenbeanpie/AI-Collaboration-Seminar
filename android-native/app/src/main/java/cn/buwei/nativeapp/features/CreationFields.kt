@@ -3,12 +3,13 @@ package cn.buwei.nativeapp.features
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import cn.buwei.nativeapp.ReferenceFieldLabel
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.serialization.json.*
 import java.util.UUID
 
-@Composable internal fun CreationText(label:String,value:String,onChange:(String)->Unit){OutlinedTextField(value,onChange,label={Text(label)},modifier=Modifier.fillMaxWidth())}
+@Composable internal fun CreationText(label:String,value:String,onChange:(String)->Unit){OutlinedTextField(value,onChange,label={ReferenceFieldLabel(label,aiReference=label!="邀请码标识（每行一个）")},modifier=Modifier.fillMaxWidth())}
 @Composable internal fun CreationChoice(label:String,value:String,choices:List<Pair<String,String>>,change:(String)->Unit){Text(label,style=MaterialTheme.typography.labelLarge);choices.chunked(2).forEach{row->Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){row.forEach{(id,title)->FilterChip(selected=value==id,onClick={change(id)},label={Text(title)})}}}}
 @Composable internal fun CreationPayloadFields(payload:JsonObject,change:(JsonObject)->Unit){
  fun field(key:String,value:JsonElement?)=change(creationPatch(payload,key,value))
@@ -33,7 +34,7 @@ import java.util.UUID
    Text("任务 ${index+1}",style=MaterialTheme.typography.titleMedium)
    listOf("title" to "任务标题","detail" to "任务详情","criteria" to "验收要求").forEach{(key,label)->CreationText(label,task.text(key)){update(index,creationPatch(task,key,JsonPrimitive(it)))}}
    CreationText("预计工时（0.25–200）",task.text("effortHours")){it.toDoubleOrNull()?.takeIf{n->n in .25..200.0}?.let{n->update(index,creationPatch(task,"effortHours",JsonPrimitive(n)))}}
-   Text("前置任务")
+   ReferenceFieldLabel("前置任务")
    tasks.forEachIndexed{otherIndex,other->if(otherIndex!=index){val key=other.jsonObject.text("key");if(key.isNotBlank()){val dependencies=(task["dependsOn"]as? JsonArray).orEmpty();Row{Checkbox(dependencies.any{it.jsonPrimitive.content==key},{checked->update(index,creationPatch(task,"dependsOn",JsonArray(if(checked)dependencies+JsonPrimitive(key)else dependencies.filter{it.jsonPrimitive.content!=key})))});Text(other.jsonObject.text("title").ifBlank{"任务 ${otherIndex+1}"})}}}}
    TextButton({val key=task.text("key");change(JsonArray(tasks.filterIndexed{i,_->i!=index}.map{creationPatch(it.jsonObject,"dependsOn",JsonArray((it.jsonObject["dependsOn"]as? JsonArray).orEmpty().filter{d->d.jsonPrimitive.content!=key}))}))}){Text("删除任务")}
   }}

@@ -14,6 +14,9 @@ class AppearancePreferences(context:Context) {
     private val store=context.applicationContext.appearanceStore
     private val key=stringPreferencesKey("theme")
     val mode=store.data.map {it[key]?:"system"}
+    private val references=AccountReferencePreferences(store)
+    fun referenceBadges(accountId:String)=references.observe(accountId)
+    suspend fun setReferenceBadges(accountId:String,visible:Boolean)=references.setVisible(accountId,visible)
     suspend fun setMode(mode:String) {require(mode in listOf("system","light","dark"));store.edit {it[key]=mode}}
 }
 

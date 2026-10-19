@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import cn.buwei.nativeapp.NativeAiReferenceBadge
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import cn.buwei.nativeapp.data.ClientRepository
@@ -38,7 +39,7 @@ private fun ProjectOverviewContent(repository: ClientRepository, projectId: Stri
         item { Text(project?.text("name") ?: "项目概览", style = MaterialTheme.typography.headlineSmall); Text(if(project == null) "正在读取项目身份" else "${if(owner) "负责人" else "项目成员"} · ${if(project.text("status") == "archived") "已归档" else "进行中"}"); TextButton({ refresh++ }, enabled = !loading) { Text("刷新项目进度") } }
         if(loading) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
         errors.forEach { (key, error) -> item { Text("${mapOf("project" to "项目", "goal" to "主目标", "graph" to "任务", "sources" to "来源", "requirements" to "标准要求", "events" to "活动", "resources" to "资料", "invitations" to "邀请申请")[key]}：$error", color = MaterialTheme.colorScheme.error) } }
-        item { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text("项目主目标", style = MaterialTheme.typography.titleLarge); if(goal != null) { Text(goal.text("title").ifBlank { "尚未填写主目标" }, style = MaterialTheme.typography.titleMedium); Text(goal.text("detail")); Text("主目标 r${goal.text("revision")}", style = MaterialTheme.typography.bodySmall) } else Text("主目标暂不可用"); TextButton({ onNavigate("tasks") }) { Text("查看目标与依赖任务") } } } }
+        item { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text("项目主目标", style = MaterialTheme.typography.titleLarge); NativeAiReferenceBadge(); if(goal != null) { Text(goal.text("title").ifBlank { "尚未填写主目标" }, style = MaterialTheme.typography.titleMedium); Text(goal.text("detail")); Text("主目标 r${goal.text("revision")}", style = MaterialTheme.typography.bodySmall) } else Text("主目标暂不可用"); TextButton({ onNavigate("tasks") }) { Text("查看目标与依赖任务") } } } }
         item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { Button({ onNavigate("tasks") }) { Text("查看任务") }; OutlinedButton({ onNavigate("ai-chat") }) { Text("询问项目 AI") } } }
         item { Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text("任务完成情况", style = MaterialTheme.typography.titleLarge); if(graph != null && graph["items"] is JsonArray) { val done = tasks.count { it.text("status") == "done" }; Text("已完成 $done / ${tasks.size} 项"); LinearProgressIndicator(progress = { if(tasks.isEmpty()) 0f else done.toFloat() / tasks.size }, modifier = Modifier.fillMaxWidth()); Text("待开始 ${tasks.count { it.text("status") == "todo" }} · 进行中 ${tasks.count { it.text("status") == "doing" }} · 受阻 ${tasks.count { it.text("status") == "blocked" }}"); (graph["memberIds"] as? JsonArray)?.let { Text("项目成员 ${it.distinct().size} 人", style = MaterialTheme.typography.bodySmall) } } else Text("任务统计暂不可用") } } }
         item { Text("待处理事项", style = MaterialTheme.typography.titleLarge) }

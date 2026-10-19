@@ -6,6 +6,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import cn.buwei.nativeapp.NativeAiReferenceBadge
+import cn.buwei.nativeapp.ReferenceFieldLabel
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import cn.buwei.nativeapp.data.ClientRepository
@@ -77,7 +79,7 @@ private fun ProjectDashboardContent(repository: ClientRepository, onProject: (St
         usage?.let { row -> item { val ai = row.obj("ai").obj("user"); val storage = row.obj("storage").obj("user"); Text("今日 AI ${ai.text("used")} / ${ai.text("limit")} 次 · 存储 ${storage.text("used")} / ${storage.text("limit")} 字节", style = MaterialTheme.typography.bodySmall) } }
         items(visible, key = { it.text("id") }) { project -> val graph = graphs[project.text("id")]; val status = dashboardStatus(project, graph); Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("${dashboardStatusLabel(status)} · ${if(project.text("myRole") == "owner") "负责人" else "成员"}", style = MaterialTheme.typography.labelLarge)
-            Text(project.text("name"), style = MaterialTheme.typography.titleLarge); Text(project.text("description").ifBlank { "尚未添加项目说明。" }); Text(dashboardDeadline(project), style = MaterialTheme.typography.bodySmall)
+            Text(project.text("name"), style = MaterialTheme.typography.titleLarge); NativeAiReferenceBadge(); Text(project.text("description").ifBlank { "尚未添加项目说明。" }); Text(dashboardDeadline(project), style = MaterialTheme.typography.bodySmall)
             if(graph != null) { val tasks = dashboardTasks(graph); val done = tasks.count { it.text("status") == "done" }; Text("$done / ${tasks.size} 项任务完成"); LinearProgressIndicator(progress = { if(tasks.isEmpty()) 0f else done.toFloat() / tasks.size }, modifier = Modifier.fillMaxWidth()) } else Text(graphErrors[project.text("id")] ?: "读取任务进度…")
             Button({ onProject(project.text("id")) }) { Text("进入项目") }
         } } }

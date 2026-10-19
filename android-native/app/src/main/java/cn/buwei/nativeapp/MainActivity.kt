@@ -102,6 +102,7 @@ class MainActivity:ComponentActivity() {
         val theme by appearance.mode.collectAsStateWithLifecycle(initialValue="system")
         val dark=theme=="dark" || (theme=="system" && isSystemInDarkTheme())
         BackHandler(user!=null&&section!="projects"){if(projectId!=null&&section!="overview")navigate("overview")else openGlobal("projects")}
+        NativeReferencePreferences(appearance,user?.get("id")?.jsonPrimitive?.contentOrNull) {
         NativeTheme(dark) {
             Surface(Modifier.fillMaxSize()) {
                 if(busy) Box(Modifier.fillMaxSize().padding(32.dp)) { CircularProgressIndicator() }
@@ -121,7 +122,7 @@ class MainActivity:ComponentActivity() {
                             if(section=="profile") AccountNavigation(user!!)
                             Box(Modifier.weight(1f).fillMaxWidth()) { key(repository.accountId,repository.epoch,section,projectId,model.destination) {
                                 when(section) {
-                                    "appearance" -> Column(Modifier.padding(20.dp)) { Text("外观",style=MaterialTheme.typography.headlineMedium); listOf("system" to "跟随系统","light" to "浅色","dark" to "深色").forEach { (key,title)->TextButton(onClick={lifecycleScope.launch {appearance.setMode(key)}}) {Text((if(theme==key) "✓ " else "")+title)} } }
+                                    "appearance" -> NativeAppearanceSettings(theme) { appearance.setMode(it) }
                                     "offline" -> OfflineView(repository)
                                     "media" -> MediaWorkspace(repository,projectId){model.workspaceActive=it}
                                     "export" -> projectId?.let {ExportWorkspace(repository,it)}
@@ -136,6 +137,7 @@ class MainActivity:ComponentActivity() {
                 }
                 fatal?.let { message->AlertDialog(onDismissRequest={fatal=null},title={Text("操作提示")},text={Text(message)},confirmButton={TextButton(onClick={fatal=null}) {Text("知道了")}}) }
             }
+        }
         }
         LaunchedEffect(user?.get("id")) { if(user!=null) {
             if(Build.VERSION.SDK_INT>=33) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
