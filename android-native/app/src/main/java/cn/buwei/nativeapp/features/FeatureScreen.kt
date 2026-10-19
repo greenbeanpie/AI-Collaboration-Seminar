@@ -132,7 +132,7 @@ private fun ResourceView(repository:ClientRepository,destination:Destination,onP
      var expanded by remember{mutableStateOf(false)};TextButton({expanded=!expanded}){Text(if(expanded)"收起"else"展开内容")};if(expanded)StructuredValue(item)
      ContextActions(repository,canonical,item,ids,onOpen,onForm)
     }}
-   }
+    }}
    payload.text("nextCursor").takeIf{it.isNotBlank()}?.let{next->OutlinedButton({previous=payload["items"]!!.jsonArray;cursor=next},enabled=!busy){Text("加载更多")}}
   }else{StructuredValue(payload);val ids=destination.bindings+extractIds(payload);if(canonical=="$projectPrefix/materials/{materialId}"&&payload.flag("canEdit"))MaterialEditor(repository,destination.path,payload);ContextActions(repository,canonical,payload,ids,onOpen,onForm)}
   val create=NativeContracts.operations.firstOrNull{it.path==canonical&&it.method=="POST"&&!it.binary};if(create!=null)OutlinedButton({onForm(FormDestination(create,destination.bindings))}){Text(create.title)}
@@ -141,7 +141,7 @@ private fun ResourceView(repository:ClientRepository,destination:Destination,onP
 
 private fun itemTitle(item:JsonObject)=listOf("title","name","displayName","subject","username","summary","body","message","id","taskId","materialId").firstNotNullOfOrNull{item.text(it).takeIf{v->v.isNotBlank()}}?:"记录"
 private fun bindPath(path:String,ids:Map<String,String>):String {var p=path;ids.forEach{(k,v)->p=p.replace("{$k}",Uri.encode(v))};return p}
-private fun extractIds(item:JsonObject):Map<String,String>{val result=item.filter{(k,v)->k.endsWith("Id")&&v is JsonPrimitive&&!v.contentOrNull.isNullOrBlank()}.mapValues{it.value.jsonPrimitive.content}.toMutableMap();item.obj("currentVersion").text("versionId").takeIf{it.isNotBlank()}?.let{result["versionId"]=it;result["sourceVersionId"]=it};item.text("currentVersionId").takeIf{it.isNotBlank()}?.let{result["sourceVersionId"]=it};return result}
+private fun extractIds(item:JsonObject):Map<String,String>{val result=item.filter{(k,v)->(k=="id"||k.endsWith("Id"))&&v is JsonPrimitive&&!v.contentOrNull.isNullOrBlank()}.mapValues{it.value.jsonPrimitive.content}.toMutableMap();item.obj("currentVersion").text("versionId").takeIf{it.isNotBlank()}?.let{result["versionId"]=it;result["sourceVersionId"]=it};item.text("currentVersionId").takeIf{it.isNotBlank()}?.let{result["sourceVersionId"]=it};return result}
 private fun detailOperation(canonical:String?,item:JsonObject,ids:Map<String,String>):NativeOperation?{
  if(canonical==null)return null
  return NativeContracts.operations.firstOrNull{it.method=="GET"&&it.path.startsWith("$canonical/{")&&it.path.removePrefix("$canonical/").count{c->c=='/'}==0&& !bindPath(it.path,ids).contains('{')}
@@ -166,7 +166,7 @@ private fun ContextActions(repository:ClientRepository,canonical:String?,item:Js
  }
  var expanded by remember(canonical){mutableStateOf(false)}
  val itemId=item.text("id")
- val base=if(canonical.endsWith("}"))canonical else if(itemId.isNotBlank())NativeContracts.operations.firstOrNull{it.method=="GET"&&it.path.startsWith("$canonical/{")&&it.path.removePrefix("$canonical/").count{c->c=='/'}==0}?.path else null
+ val base=if(canonical.endsWith("}"))canonical else if(itemId.isNotBlank())NativeContracts.operations.firstOrNull{it.path.startsWith("$canonical/{")}?.path?.let{candidate->val end=candidate.indexOf('}',canonical.length);if(end>=0)candidate.substring(0,end+1)else null} else null
  val ids=bindings.toMutableMap();if(base!=null&&itemId.isNotBlank()){Regex("\\{([^}]+)}").findAll(base).lastOrNull()?.groupValues?.get(1)?.let{ids[it]=itemId}}
  val prefix=base?:canonical
  val actions=NativeContracts.operations.filter{op->(op.path==prefix&&op.method!="GET"||op.path.startsWith("$prefix/")&&op.path.removePrefix("$prefix/").count{it=='/'}<=1)&&allowed(op)&&!op.binary&&Regex("\\{([^}]+)}").findAll(op.path).all{it.groupValues[1] in ids}}

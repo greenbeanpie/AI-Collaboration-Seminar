@@ -74,6 +74,7 @@ internal fun SchemaField(name:String,schema:JsonObject,value:JsonElement?,requir
 private fun inferSchema(value:JsonElement):JsonObject=buildJsonObject {put("type",when(value){is JsonObject->"object";is JsonArray->"array";else->if((value as? JsonPrimitive)?.booleanOrNull!=null)"boolean"else"string"})}
 
 internal fun validate(schema:JsonObject,value:JsonElement?,path:String="表单"):String? {
+ if(value==JsonNull){val types=schema["type"];if(types?.toString()=="\"null\""||types is JsonArray&&types.any{it.toString()=="\"null\""})return null}
  val variants=(schema["oneOf"]?:schema["anyOf"]) as? JsonArray
  if(!variants.isNullOrEmpty())return if(variants.any{validate(it.jsonObject,value,path)==null})null else "$path 不符合任何允许的格式"
  if(value==null)return "$path 必填"
