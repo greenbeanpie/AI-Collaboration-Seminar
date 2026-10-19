@@ -13,6 +13,10 @@ $publishPath = (Resolve-Path -LiteralPath $PublishDirectory).Path
 $runtimePath = (Resolve-Path -LiteralPath $RuntimeInstaller).Path
 if (!(Test-Path -LiteralPath (Join-Path $publishPath 'Buwei.Windows.Native.exe'))) { throw 'Publish directory does not contain Buwei.Windows.Native.exe.' }
 if (!(Test-Path -LiteralPath (Join-Path $publishPath 'coreclr.dll'))) { throw 'Expected self-contained .NET publish output.' }
+if (!(Test-Path -LiteralPath (Join-Path $publishPath 'Buwei.Windows.Native.pri')) -or !(Test-Path -LiteralPath (Join-Path $publishPath 'App.xbf'))) { throw 'Compiled native XAML resources are missing from publish output.' }
+$pri = [IO.File]::ReadAllBytes((Join-Path $publishPath 'Buwei.Windows.Native.pri'))
+$xbf = [IO.File]::ReadAllBytes((Join-Path $publishPath 'App.xbf'))
+if ($pri.Length -lt 8 -or [Text.Encoding]::ASCII.GetString($pri, 0, 7) -ne 'mrm_pri' -or $xbf.Length -lt 4 -or [Convert]::ToHexString($xbf[0..3]) -ne '58424600') { throw 'Native XAML resource headers are invalid; PRI and XBF must not overwrite each other.' }
 $licensePath = Join-Path $publishPath 'licenses'
 if (Get-ChildItem -LiteralPath $publishPath -Recurse -Filter '*WebView2*' | Where-Object { !$_.FullName.StartsWith($licensePath + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) }) { throw 'WebView2 dependency is forbidden in the native package.' }
 $authenticode = Get-AuthenticodeSignature -LiteralPath $runtimePath

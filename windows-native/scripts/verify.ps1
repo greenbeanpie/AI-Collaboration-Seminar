@@ -3,6 +3,7 @@ $ErrorActionPreference = 'Stop'
 $nativeRoot = Split-Path $PSScriptRoot -Parent
 Push-Location $nativeRoot
 try {
+    & (Join-Path $PSScriptRoot 'package-resources.test.ps1')
     & dotnet restore App/Buwei.Windows.csproj --locked-mode -p:Platform=x64
     if ($LASTEXITCODE -ne 0) { throw 'Locked WinUI dependency restore failed.' }
     & node scripts/generate-contracts.mjs --check
