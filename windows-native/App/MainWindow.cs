@@ -140,6 +140,7 @@ public sealed class MainWindow : Window
         media.Failed += message => DispatcherQueue.TryEnqueue(() => SetStatus(message, true));
         workspace = new WorkspaceView(repository);
         workspace.StatusChanged += message => SetStatus(message);
+        workspace.TaskFileUploadRequested = AddTaskFileAsync; workspace.TaskFileResumeUploadRequested = ResumeTaskFileUploadAsync;
         workspace.AddFileRequested = AddFileAsync; workspace.CaptureRequested = CaptureAsync; workspace.OpenAttachmentRequested = OpenAttachmentAsync;
         workspace.VoiceRequested = (project, rehearsal) => ShowAsync("语音答辩", new NativeVoiceView(repository, project, rehearsal, activity) { Width = 580 });
         workspace.ExportRequested = ExportAsync;
@@ -251,38 +252,79 @@ public sealed class MainWindow : Window
         using var busy = activity.Enter("离线准备"); var result = await repository.PrepareProjectAsync(project, transferStop.Token);
         SetStatus($"已保存 {result.Endpoints} 个入口及 {result.Sections} 个原文分节；{(result.PartialResources == 0 ? "本次文本范围已准备" : $"另有 {result.PartialResources} 个版本的原文准备未完整完成")}。原文件需另外下载，其他业务页面仍需事先在线打开");
     }
-    private NativeTransfers Transfers() => new(repository.Http, Path.Combine(AccountDirectory(), "files"), activity);
+    private NativeTransfers Transfers() => new(repository.Http, Path.Combine(AccountDirectory(), "files"), activity, repository.AccountCancellation);
     private async Task AddFileAsync()
     {
         var project = workspace?.CurrentProjectId ?? throw new InvalidOperationException("请先打开项目");
         var file = await files.PickAsync(); if (file != null) await ConfirmUploadAsync(project, file.Path, file.ContentType);
     }
-    private async Task ConfirmUploadAsync(string project, string source, string contentType)
+    private async Task ResumeTaskFileUploadAsync(string requestId)
+    {
+        var ownerEpoch = repository.Epoch; var transferToken = transferStop.Token;
+        if (!await repository.TaskFileNeedsUploadAsync(requestId, transferToken)) { SetStatus("服务端原文件已上传完成，无需重复上传；请在任务页面核对并恢复登记。"); return; }
+        var request = (await repository.Store.TaskFileRequestsAsync()).SingleOrDefault(x => x.Id == requestId) ?? throw new InvalidOperationException("登记记录已处理。");
+        var recovery = JsonNode.Parse(request.Recovery ?? "null") ?? throw new InvalidOperationException("没有私有原文件恢复信息。");
+        var source = recovery["sourcePath"]!.GetValue<string>(); var sha = recovery["sha256"]!.GetValue<string>();
+        var ownedDirectory = Path.GetFullPath(Path.Combine(AccountDirectory(), "files")) + Path.DirectorySeparatorChar;
+        if (!Path.GetFullPath(source).StartsWith(ownedDirectory, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("恢复文件路径不属于当前账户。");
+        using var busy = activity.Enter("恢复任务成果上传");
+        await using (var file = File.OpenRead(source)) if (!Convert.ToHexString(await System.Security.Cryptography.SHA256.HashDataAsync(file, transferToken)).Equals(sha, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("本机文件已变化，不能继续原上传。");
+        if (repository.Epoch != ownerEpoch) throw new InvalidOperationException("账户已变化。");
+        var project = ClientPaths.Project(request.Path)!; var body = JsonNode.Parse(request.Body)!;
+        await Transfers().UploadAsync(project, body["fileId"]!.GetValue<string>(), source, ct: transferToken);
+        if (repository.Epoch != ownerEpoch) throw new InvalidOperationException("账户已变化。");
+        SetStatus("原文件上传已完成；请在任务文件页面核对后恢复登记。");
+    }
+    private async Task AddTaskFileAsync(TaskFileTarget target)
+    {
+        var epoch = repository.Epoch;
+        var path = $"/api/v1/projects/{target.ProjectId}/tasks/{target.TaskId}/files" + (target.MaterialId == null ? "" : "/" + target.MaterialId);
+        if ((await repository.Store.TaskFileRequestsAsync()).Any(x => x.Path == path)) throw new InvalidOperationException("该任务文件有待处理的登记记录，请先核对或恢复。");
+        var file = await files.PickAsync();
+        if (repository.Epoch != epoch) throw new InvalidOperationException("账户已变化，请重新打开任务。");
+        if (file != null) await ConfirmUploadAsync(target.ProjectId, file.Path, file.ContentType, target);
+    }
+    private async Task ConfirmUploadAsync(string project, string source, string contentType, TaskFileTarget? taskFile = null)
     {
         var transferToken = transferStop.Token;
-        var account = repository.AccountId ?? throw new InvalidOperationException("请先登录"); var info = new FileInfo(source);
+        var account = repository.AccountId ?? throw new InvalidOperationException("请先登录"); var ownerEpoch = repository.Epoch; var info = new FileInfo(source);
         var options = new StackPanel { Spacing = 12 };
         options.Children.Add(new TextBlock { Text = $"{info.Name}\n{info.Length / 1048576.0:F2} MiB\n上传沿用项目现有处理策略；启用自动 AI 的项目可能产生费用。", TextWrapping = TextWrapping.Wrap });
-        var import = new CheckBox { Content = "同时导入 Office 正文供项目 AI 使用", IsChecked = OfficeTextReader.IsSupported(source), Visibility = OfficeTextReader.IsSupported(source) ? Visibility.Visible : Visibility.Collapsed };
+        var import = new CheckBox { Content = taskFile == null ? "同时导入 Office 正文供项目 AI 使用" : "提取 Office 正文登记到任务材料（最多 60,000 字符，超限明确截断）", IsChecked = OfficeTextReader.IsSupported(source), Visibility = OfficeTextReader.IsSupported(source) ? Visibility.Visible : Visibility.Collapsed };
         options.Children.Add(import);
-        var dialog = new ContentDialog { XamlRoot = layout.XamlRoot, Title = "确认上传原文件", Content = options, PrimaryButtonText = "上传", CloseButtonText = "保留在本机" };
+        var dialog = new ContentDialog { XamlRoot = layout.XamlRoot, Title = taskFile == null ? "确认上传原文件" : "确认上传并登记任务成果文件", Content = options, PrimaryButtonText = "上传", CloseButtonText = "保留在本机" };
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        if (repository.Epoch != ownerEpoch) throw new InvalidOperationException("账户已变化，请重新打开任务。");
         using var busy = activity.Enter("文件暂存与上传");
         var owned = Path.Combine(AccountDirectory(), "files", "pending-" + Guid.NewGuid().ToString("N") + Path.GetExtension(source));
         Directory.CreateDirectory(Path.GetDirectoryName(owned)!);
         await using (var input = File.OpenRead(source)) await using (var output = File.Create(owned)) await input.CopyToAsync(output, transferToken);
-        if (account != repository.AccountId) throw new InvalidOperationException("账号已变化，文件保留在原账号目录");
+        if (account != repository.AccountId || repository.Epoch != ownerEpoch) throw new InvalidOperationException("账号已变化，文件保留在原账号目录");
+        string? taskText = null;
+        if (taskFile != null && import.IsChecked == true && OfficeTextReader.IsSupported(owned))
+        {
+            taskText = await OfficeTextReader.ReadAsync(owned, transferToken);
+            if (taskText.Length > ClientRepository.MaxTaskFileTextCharacters)
+            {
+                taskText = ClientRepository.BoundTaskFileText(taskText);
+                SetStatus("任务材料正文已明确截断，原文件完整保留。");
+            }
+        }
+        if (repository.Epoch != ownerEpoch) throw new InvalidOperationException("账户已变化，请重新打开任务。");
+        string digest;
+        await using (var prepared = File.OpenRead(owned)) digest = Convert.ToHexString(await System.Security.Cryptography.SHA256.HashDataAsync(prepared, transferToken));
+        if (repository.Epoch != ownerEpoch) throw new InvalidOperationException("账户已变化，请重新打开任务。");
         var created = await repository.SendAsync("POST", $"/projects/{project}/files", new JsonObject { ["fileName"] = info.Name, ["contentType"] = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType }, ct: transferToken);
         var fileId = created?["fileId"]?.GetValue<string>() ?? throw new InvalidDataException("服务未分配文件");
-        await using (var prepared = File.OpenRead(owned))
-        {
-            var digest = Convert.ToHexString(await System.Security.Cryptography.SHA256.HashDataAsync(prepared, transferToken));
-            var journal = new JsonObject { ["projectId"] = project, ["fileId"] = fileId, ["sourcePath"] = owned, ["sha256"] = digest };
-            await File.WriteAllTextAsync(Path.Combine(AccountDirectory(), "files", $"upload-{Guid.Parse(project)}-{Guid.Parse(fileId)}.json"), journal.ToJsonString(), transferToken);
-        }
+        var registration = taskFile == null ? null : await repository.PrepareTaskFileRegistrationAsync(taskFile, fileId, taskText, recovery: new(owned, digest));
+        var journal = new JsonObject { ["projectId"] = project, ["fileId"] = fileId, ["sourcePath"] = owned, ["sha256"] = digest };
+        await File.WriteAllTextAsync(Path.Combine(Path.GetDirectoryName(owned)!, $"upload-{Guid.Parse(project)}-{Guid.Parse(fileId)}.json"), journal.ToJsonString());
+        if (repository.Epoch != ownerEpoch) throw new InvalidOperationException("账户已变化，恢复记录保留在原账户。");
         await Transfers().UploadAsync(project, fileId, owned, new Progress<double>(value => SetStatus($"上传进度 {value:P0}")), transferToken);
-        if (import.IsChecked == true && OfficeTextReader.IsSupported(owned)) await NativeDocumentImport.ImportOfficeAsync(repository, project, fileId, owned, transferToken);
-        SetStatus("原文件上传完成，本机副本已保留");
+        if (repository.Epoch != ownerEpoch) throw new InvalidOperationException("账户已变化，上传及登记记录保留在原账户。");
+        if (registration != null) await repository.TransmitTaskFileRegistrationAsync(registration, true, transferToken);
+        else if (import.IsChecked == true && OfficeTextReader.IsSupported(owned)) await NativeDocumentImport.ImportOfficeAsync(repository, project, fileId, owned, transferToken);
+        SetStatus(registration == null ? "原文件上传完成，本机副本已保留" : "任务成果文件已上传并登记，原文件及历史版本保留");
     }
     private async Task CaptureAsync()
     {

@@ -9,6 +9,8 @@ var tests = new List<(string Name, Func<Task> Run)>();
 const string Project = "11111111-1111-4111-8111-111111111111";
 const string Root = "/api/v1/projects/" + Project;
 const string TaskPath = Root + "/tasks/22222222-2222-4222-8222-222222222222";
+const string TaskFileId = "88888888-8888-4888-8888-888888888888";
+const string TaskMaterialId = "99999999-9999-4999-8999-999999999999";
 const string State = "sssssssssssssssssssssssssssssssssssssssssss";
 const string Code = "ccccccccccccccccccccccccccccccccccccccccccc";
 
@@ -589,6 +591,114 @@ tests.Add(("Discard cannot remove an in-flight submission before its original re
     release.SetResult(); await sending; await Reject(() => discard); Equal((await f.Store.WritesAsync()).Count, 0);
 }));
 
+tests.Add(("Task file registration persists immutable upload identity without sending HTTP", async () =>
+{
+    using var f = new Fixture(); await f.Login(); var calls = 0; f.Handler.Route = _ => { calls++; throw new Exception("unexpected HTTP"); };
+    var owned = Path.Combine(f.Store.DataDirectory, "accounts", ClientPaths.SafeSegment("account-a"), "files", "owned.docx");
+    var id = await f.Repository.PrepareTaskFileRegistrationAsync(new(Project, TaskPath.Split('/').Last()), TaskFileId, "正文", recovery: new(owned, new string('a', 64)));
+    var row = (await f.Store.TaskFileRequestsAsync()).Single(); Equal(row.Id, id); Equal(row.State, "waiting_upload"); Equal(row.Path, TaskPath + "/files");
+    Equal(JsonNode.Parse(row.Body)!["fileId"]!.ToString(), TaskFileId); Equal(JsonNode.Parse(row.Recovery!)!["sourcePath"]!.ToString(), Path.GetFullPath(owned));
+    Equal(calls, 0); Equal((await f.Store.WritesAsync()).Count, 0);
+    await Reject(() => f.Repository.PrepareTaskFileRegistrationAsync(new(Project, TaskPath.Split('/').Last()), "88888888-8888-4888-8888-888888888888", null));
+}));
+
+tests.Add(("Task file POST and PUT use exact DTO and material revision rather than task revision", async () =>
+{
+    using var f = new Fixture(); await f.Login();
+    var create = await f.Repository.PrepareTaskFileRegistrationAsync(new(Project, TaskPath.Split('/').Last()), TaskFileId, "正文");
+    f.Handler.Route = request => { Equal(request.Method, "POST"); Equal(request.Key, create); Equal(request.Path, TaskPath + "/files"); Equal(JsonNode.Parse(request.Body!)!.AsObject().Count, 2); return Task.FromResult(Reply(TaskFileProof())); };
+    await f.Repository.TransmitTaskFileRegistrationAsync(create, true); Equal((await f.Store.TaskFileRequestsAsync()).Count, 0);
+    var replace = await f.Repository.PrepareTaskFileRegistrationAsync(new(Project, TaskPath.Split('/').Last(), TaskMaterialId, 5), TaskFileId, null);
+    f.Handler.Route = request => { Equal(request.Method, "PUT"); Equal(request.Path, TaskPath + "/files/" + TaskMaterialId); Equal(JsonNode.Parse(request.Body!)!["expectedRevision"]!.GetValue<int>(), 5); return Task.FromResult(Reply(TaskFileProof(6))); };
+    await f.Repository.TransmitTaskFileRegistrationAsync(replace, true); Equal((await f.Store.TaskFileRequestsAsync()).Count, 0);
+}));
+
+tests.Add(("Task file lost response pauses automatic retry and GET-only reconciliation finds continuation", async () =>
+{
+    using var f = new Fixture(); await f.Login(); var id = await f.Repository.PrepareTaskFileRegistrationAsync(new(Project, TaskPath.Split('/').Last()), TaskFileId, null);
+    f.Handler.Route = _ => throw new HttpRequestException("synthetic committed response lost"); await Reject(() => f.Repository.TransmitTaskFileRegistrationAsync(id, true));
+    Equal((await f.Store.TaskFileRequestsAsync()).Single().State, "unknown");
+    f.Handler.Route = _ => throw new Exception("background may not replay file registration"); await f.Repository.SyncAsync();
+    var pages = 0; f.Handler.Route = request => { Equal(request.Method, "GET"); Equal(request.Path, TaskPath + "/files"); pages++; return Task.FromResult(Reply(request.Query.Contains("cursor=") ? new JsonObject { ["items"] = new JsonArray(TaskFileProof()), ["nextCursor"] = null } : new JsonObject { ["items"] = new JsonArray(), ["nextCursor"] = "next" })); };
+    await f.Repository.ReconcileTaskFileRegistrationAsync(id); Equal(pages, 2); Equal((await f.Store.TaskFileRequestsAsync()).Count, 0);
+}));
+
+tests.Add(("Task file explicit retries retain original key file ID body and require charge acknowledgement", async () =>
+{
+    using var f = new Fixture(); await f.Login(); var id = await f.Repository.PrepareTaskFileRegistrationAsync(new(Project, TaskPath.Split('/').Last()), TaskFileId, "fixed body");
+    await Reject(() => f.Repository.TransmitTaskFileRegistrationAsync(id, false));
+    var bodies = new List<string>(); var files = new HashSet<string>();
+    f.Handler.Route = request => { Equal(request.Key, id); bodies.Add(request.Body!); var file = JsonNode.Parse(request.Body!)!["fileId"]!.ToString(); if (files.Add(file)) throw new HttpRequestException("response lost after natural file mapping"); return Task.FromResult(Reply(TaskFileProof())); };
+    await Reject(() => f.Repository.TransmitTaskFileRegistrationAsync(id, true)); await f.Repository.TransmitTaskFileRegistrationAsync(id, true);
+    Equal(files.Count, 1); Equal(bodies[0], bodies[1]);
+}));
+
+tests.Add(("Task file late response after account switch remains with original account", async () =>
+{
+    using var f = new Fixture(); await f.Login(); var id = await f.Repository.PrepareTaskFileRegistrationAsync(new(Project, TaskPath.Split('/').Last()), TaskFileId, null);
+    var entered = NewSignal(); var release = NewSignal(); f.Handler.Route = async _ => { entered.SetResult(); await release.Task; return Reply(TaskFileProof()); };
+    var sending = f.Repository.TransmitTaskFileRegistrationAsync(id, true); await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    await f.Login("account-b"); release.SetResult(); await Reject(() => sending); Equal((await f.Store.TaskFileRequestsAsync()).Count, 0);
+    await f.Login(); Equal((await f.Store.TaskFileRequestsAsync()).Single().State, "sending");
+}));
+
+tests.Add(("Task file validates identity strict fields text limits owned recovery and revocation before persistence", async () =>
+{
+    using var f = new Fixture(); await f.Login();
+    await Reject(() => f.Repository.PrepareTaskFileRegistrationAsync(new(Project, "bad"), TaskFileId, null));
+    await Reject(() => f.Repository.PrepareTaskFileRegistrationAsync(new(Project, TaskPath.Split('/').Last(), TaskMaterialId), TaskFileId, null));
+    await Reject(() => f.Repository.PrepareTaskFileRegistrationAsync(new(Project, TaskPath.Split('/').Last(), null, 7), TaskFileId, null));
+    await Reject(() => f.Repository.PrepareTaskFileRegistrationAsync(new(Project, TaskPath.Split('/').Last()), TaskFileId, new string('a', 60001)));
+    await Reject(() => f.Repository.PrepareTaskFileRegistrationAsync(new(Project, TaskPath.Split('/').Last()), TaskFileId, null, recovery: new(Path.Combine(f.DirectoryPath,"outside.docx"), new string('a',64))));
+    await f.Store.RevokeAsync(Project); await Reject(() => f.Repository.PrepareTaskFileRegistrationAsync(new(Project, TaskPath.Split('/').Last()), TaskFileId, null)); Equal((await f.Store.TaskFileRequestsAsync()).Count, 0);
+}));
+
+tests.Add(("Task file send prevents simultaneous retry and abandonment", async () =>
+{
+    using var f = new Fixture(); await f.Login(); var id = await f.Repository.PrepareTaskFileRegistrationAsync(new(Project, TaskPath.Split('/').Last()), TaskFileId, null);
+    var entered = NewSignal(); var release = NewSignal(); f.Handler.Route = async _ => { entered.SetResult(); await release.Task; return Reply(TaskFileProof()); };
+    var sending = f.Repository.TransmitTaskFileRegistrationAsync(id, true); await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    await Reject(() => f.Repository.TransmitTaskFileRegistrationAsync(id, true)); await Reject(() => f.Repository.AbandonTaskFileRegistrationAsync(id, true));
+    release.SetResult(); await sending; Equal((await f.Store.TaskFileRequestsAsync()).Count, 0);
+}));
+
+tests.Add(("Task file recovery reads exact original file state and avoids uploading an available file again", async () =>
+{
+    using var f = new Fixture(); await f.Login(); var id = await f.Repository.PrepareTaskFileRegistrationAsync(new(Project, TaskPath.Split('/').Last()), TaskFileId, null);
+    foreach (var state in new[] { "pending", "available" })
+    {
+        f.Handler.Route = request => { Equal(request.Method, "GET"); Equal(request.Path, Root + "/files"); True(request.Query.Contains("fileId=" + TaskFileId)); return Task.FromResult(Reply(new JsonObject { ["items"] = new JsonArray(new JsonObject { ["fileId"] = TaskFileId, ["status"] = state }), ["nextCursor"] = null })); };
+        Equal(await f.Repository.TaskFileNeedsUploadAsync(id), state == "pending");
+    }
+    f.Handler.Route = _ => Task.FromResult(Reply(new JsonObject { ["items"] = new JsonArray(), ["nextCursor"] = null })); await Reject(() => f.Repository.TaskFileNeedsUploadAsync(id));
+}));
+
+tests.Add(("Task file wrong completion proof cannot clear intent and manual stop preserves historical record", async () =>
+{
+    using var f = new Fixture(); await f.Login(); var id = await f.Repository.PrepareTaskFileRegistrationAsync(new(Project, TaskPath.Split('/').Last(), TaskMaterialId, 5), TaskFileId, null);
+    f.Handler.Route = _ => Task.FromResult(Reply(TaskFileProof(5))); await Reject(() => f.Repository.TransmitTaskFileRegistrationAsync(id, true));
+    Equal((await f.Store.TaskFileRequestsAsync()).Single().State, "unknown");
+    f.Handler.Route = _ => Task.FromResult(Reply(new JsonObject { ["items"] = new JsonArray(), ["nextCursor"] = null })); await Reject(() => f.Repository.ReconcileTaskFileRegistrationAsync(id));
+    await Reject(() => f.Repository.AbandonTaskFileRegistrationAsync(id, false)); await f.Repository.AbandonTaskFileRegistrationAsync(id, true); Equal((await f.Store.TaskFileRequestsAsync()).Count, 0);
+}));
+
+tests.Add(("Task file bounded text includes explicit truncation notice and preserves surrogate boundaries", () =>
+{
+    const string note = "\n\n（正文超限，仅登记开头部分；完整内容保留在原文件）";
+    var boundary = ClientRepository.MaxTaskFileTextCharacters - note.Length;
+    var text = new string('中', boundary - 1) + "😀" + new string('文', 100);
+    var bounded = ClientRepository.BoundTaskFileText(text);
+    True(bounded.Length <= 60000); True(bounded.EndsWith(note)); True(!char.IsSurrogate(bounded[boundary - 2]));
+    Equal(ClientRepository.BoundTaskFileText("保持全文😀"), "保持全文😀");
+    return Task.CompletedTask;
+}));
+
+tests.Add(("Account replacement cancels old transfer lifetime and gives new account an independent lifetime", async () =>
+{
+    using var f = new Fixture(); await f.Login(); var original = f.Repository.AccountCancellation;
+    True(!original.IsCancellationRequested); await f.Login("account-b"); True(original.IsCancellationRequested); True(!f.Repository.AccountCancellation.IsCancellationRequested);
+}));
+
 var failed = 0;
 foreach (var (name, run) in tests)
 {
@@ -606,6 +716,7 @@ static async Task Until(Func<Task<bool>> check) { for (var i = 0; i < 200; i++) 
 static HttpResponseMessage Reply(JsonNode data) => new(HttpStatusCode.OK) { Content = new StringContent(new JsonObject { ["data"] = data }.ToJsonString(), Encoding.UTF8, "application/json") };
 static HttpResponseMessage Error(int status) => new((HttpStatusCode)status) { Content = new StringContent(new JsonObject { ["error"] = new JsonObject { ["code"] = "SYNTHETIC", ["message"] = "synthetic failure" } }.ToJsonString(), Encoding.UTF8, "application/json") };
 
+static JsonObject TaskFileProof(int revision = 1) => new() { ["taskId"] = TaskPath.Split('/').Last(), ["fileId"] = TaskFileId, ["materialId"] = TaskMaterialId, ["versionId"] = "77777777-7777-4777-8777-777777777777", ["revision"] = revision };
 static JsonObject SubmissionSuccess(Request request)
 {
     var sent = JsonNode.Parse(request.Body!)!["body"]!.DeepClone().AsObject();

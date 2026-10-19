@@ -74,9 +74,17 @@ try
     catch (HttpRequestException) { }
     await uncertainUpload.UploadAsync(uncertainProject, uncertainFile, source);
     if (uncertainHandler.Begins != 1 || uncertainHandler.UploadedParts != 1) throw new Exception("Lost completion response replayed upload instead of reconciling durable session.");
+    using var accountStop = new CancellationTokenSource(); var cancelledHandler = new CancelTransferHandler(accountStop);
+    using var cancelledHttp = new HttpClient(cancelledHandler) { BaseAddress = new Uri("https://test.invalid") };
+    var cancelledTransfer = new NativeTransfers(cancelledHttp, temp, gate, accountStop.Token);
+    try { await cancelledTransfer.UploadAsync(Guid.NewGuid().ToString(), Guid.NewGuid().ToString(), source); throw new Exception("Expected account cancellation."); } catch (OperationCanceledException) { }
+    try { await cancelledTransfer.UploadAsync(Guid.NewGuid().ToString(), Guid.NewGuid().ToString(), source); throw new Exception("Expected old transfer lifetime rejection."); } catch (OperationCanceledException) { }
+    try { await cancelledTransfer.DownloadAsync("/api/v1/files/a/content", Path.Combine(temp, "cancelled-download")); throw new Exception("Expected old download lifetime rejection."); } catch (OperationCanceledException) { }
+    if (cancelledHandler.Calls != 1 || File.Exists(Path.Combine(temp, "cancelled-download"))) throw new Exception("Cancelled account issued later transfer requests or wrote a final file.");
+
 }
 finally { Directory.Delete(temp, true); }
-Console.WriteLine("PASS: production fixture, tampering, activity/restart gate, path confinement, range resume, hash failure preservation and multipart resume.");
+Console.WriteLine("PASS: production fixture, tampering, activity/restart gate, path confinement, range resume, hash failure preservation multipart resume and account cancellation.");
 
 sealed class DownloadHandler : HttpMessageHandler
 {
@@ -113,5 +121,14 @@ sealed class UploadHandler : HttpMessageHandler
         else if (path.EndsWith("/complete")) { Completed = true; if (FailCompletionOnce) throw new HttpRequestException("Simulated response loss after server commit."); payload = "{}"; }
         else throw new Exception("Unexpected upload request.");
         return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"data\":" + payload + "}", Encoding.UTF8, "application/json") };
+    }
+}
+
+sealed class CancelTransferHandler(CancellationTokenSource accountStop) : HttpMessageHandler
+{
+    public int Calls { get; private set; }
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        Calls++; accountStop.Cancel(); cancellationToken.ThrowIfCancellationRequested(); throw new Exception("Cancellation not propagated.");
     }
 }

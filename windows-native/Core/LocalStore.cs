@@ -43,6 +43,8 @@ public sealed partial class LocalStore : IDisposable
                 CREATE TABLE IF NOT EXISTS revoked(project TEXT PRIMARY KEY);
                 CREATE TABLE IF NOT EXISTS bridge_requests(id TEXT PRIMARY KEY,path TEXT NOT NULL,body TEXT NOT NULL,created TEXT NOT NULL,state TEXT NOT NULL,response TEXT,error TEXT);
                 CREATE UNIQUE INDEX IF NOT EXISTS bridge_request_active ON bridge_requests(path) WHERE state IN ('pending','unknown');
+                CREATE TABLE IF NOT EXISTS task_file_requests(id TEXT PRIMARY KEY,path TEXT NOT NULL,body TEXT NOT NULL,created TEXT NOT NULL,state TEXT NOT NULL,response TEXT,error TEXT,recovery TEXT);
+                CREATE UNIQUE INDEX IF NOT EXISTS task_file_request_active ON task_file_requests(path) WHERE state NOT IN ('confirmed','abandoned');
                 """;
             await init.ExecuteNonQueryAsync().ConfigureAwait(false);
             return await action(connection).ConfigureAwait(false);

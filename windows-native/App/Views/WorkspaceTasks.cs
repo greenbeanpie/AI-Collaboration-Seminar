@@ -74,6 +74,7 @@ public sealed partial class WorkspaceView
         }
         if (task.Text("assigneeId").Length == 0 && task.Text("lifecycleState") == "open") panel.Children.Add(Action("领取任务", async () => { await WriteAsync("POST", path + "/claim", new JsonObject { ["expectedRevision"] = task?["revision"].Copy() }); await ReplaceAsync(ct => TaskDetailAsync(id, ct)); }, "确认领取此任务？", true));
         var filesPanel = Ui.Stack(Ui.Label("本轮成果文件", 20));
+        filesPanel.Children.Add(Action("成果文件管理：上传、替换与恢复", () => ReplaceAsync(ct => TaskFilesAsync(id, ct))));
         var files = (await repository.GetAsync(path + "/files?limit=100", token)).Rows();
         foreach (var file in files) filesPanel.Children.Add(Ui.Label(file.Id("name", "title") + (file.Text("archivedAt").Length > 0 ? " · 已归档" : "")));
         panel.Children.Add(Ui.Card(filesPanel));

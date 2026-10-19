@@ -19,6 +19,8 @@ public sealed partial class ClientRepository : IDisposable
     private readonly SecretStore secrets;
     private readonly SemaphoreSlim syncing = new(1);
     private long epoch;
+    private CancellationTokenSource accountLifetime = new();
+    public CancellationToken AccountCancellation => accountLifetime.Token;
     private int activeRequests;
     public int ActiveRequests => Volatile.Read(ref activeRequests);
     public HttpClient Http { get; }
@@ -52,7 +54,9 @@ public sealed partial class ClientRepository : IDisposable
     }
     private void SetUser(JsonNode? user)
     {
-        Interlocked.Increment(ref epoch); User = user?.DeepClone(); Store.SetAccount(AccountId); AccountChanged?.Invoke();
+        Interlocked.Increment(ref epoch);
+        var previous = accountLifetime; accountLifetime = new(); previous.Cancel(); previous.Dispose();
+        User = user?.DeepClone(); Store.SetAccount(AccountId); AccountChanged?.Invoke();
     }
     public async Task RestoreAsync(CancellationToken ct = default)
     {
@@ -278,7 +282,7 @@ public sealed partial class ClientRepository : IDisposable
         return view;
         });
     }
-    public void Dispose() { Http.Dispose(); syncing.Dispose(); Store.Dispose(); }
+    public void Dispose() { accountLifetime.Cancel(); accountLifetime.Dispose(); Http.Dispose(); syncing.Dispose(); Store.Dispose(); }
     private sealed class RequestLease : IDisposable
     {
         private ClientRepository? owner;

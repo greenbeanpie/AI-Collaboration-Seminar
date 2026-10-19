@@ -5,10 +5,12 @@ using System.Text.Json.Nodes;
 
 namespace Buwei.Windows.Platform;
 
-public sealed class NativeTransfers(HttpClient http, string accountDirectory, ActivityGate activity)
+public sealed class NativeTransfers(HttpClient http, string accountDirectory, ActivityGate activity, CancellationToken accountCancellation = default)
 {
     public async Task UploadAsync(string projectId, string fileId, string sourcePath, IProgress<double>? progress = null, CancellationToken ct = default)
     {
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(ct, accountCancellation); ct = lifetime.Token;
+        ct.ThrowIfCancellationRequested();
         // File ID must first be allocated with the ordinary file-init endpoint by the business layer.
         var project = Guid.Parse(projectId); var file = Guid.Parse(fileId);
         using var busy = activity.Enter("文件上传");
@@ -64,6 +66,8 @@ public sealed class NativeTransfers(HttpClient http, string accountDirectory, Ac
     }
     public async Task DownloadAsync(string apiPath, string destination, string? expectedSha256 = null, CancellationToken ct = default)
     {
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(ct, accountCancellation); ct = lifetime.Token;
+        ct.ThrowIfCancellationRequested();
         RequireApiPath(apiPath);
         using var busy = activity.Enter("文件下载");
         var temporary = destination + ".partial"; var metadata = temporary + ".etag";
