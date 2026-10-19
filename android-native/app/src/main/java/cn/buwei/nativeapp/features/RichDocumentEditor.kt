@@ -1,5 +1,6 @@
 package cn.buwei.nativeapp.features
 
+import android.util.Log
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -7,6 +8,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import cn.buwei.nativeapp.data.ClientRepository
+import cn.buwei.nativeapp.BuildConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.*
@@ -28,7 +30,14 @@ internal fun NativeRichMaterialEditor(repository:ClientRepository,path:String,ma
    // Omit markdown intentionally: backend material API derives it through docToMarkdown.
    val response=repository.request("PUT",path,buildJsonObject{put("expectedRevision",revision);put("doc",document);put("attachmentIds",JsonArray((material.obj("currentVersion")["attachments"]as? JsonArray)?.mapNotNull{it.jsonObject["fileId"]}.orEmpty()))},intentKey)
    if(response.flag("queued")){result="已保存到本机，等待联网同步；服务端版本未更新。同步完成后请刷新核对，再继续编辑。"}else{revision=response["revision"]?:revision;result="已保存新版本"};editing=false
-  }catch(e:CancellationException){throw e}catch(e:Exception){result=(e.message?:"保存失败")+"；编辑内容已保留。版本冲突时先复制内容，再刷新核对。"}finally{busy=false}}},enabled=!busy){Text("保存新版本")}
+  }catch(e:CancellationException){throw e}catch(e:Exception){
+   if(BuildConfig.DEBUG){
+    // Class names and source locations only: no document, request body, credentials or error payload.
+    Log.e("NativeRichEditor","Material save failed: ${e.javaClass.name}\n"+e.stackTrace.joinToString("\n"))
+    e.cause?.let{cause->Log.e("NativeRichEditor","Cause: ${cause.javaClass.name}\n"+cause.stackTrace.joinToString("\n"))}
+   }
+   result=(e.message?.takeIf{it.isNotBlank()}?:"保存失败 (${e.javaClass.simpleName})")+"；编辑内容已保留。版本冲突时先复制内容，再刷新核对。"
+  }finally{busy=false}}},enabled=!busy){Text("保存新版本")}
   TextButton({editing=false},enabled=!busy){Text("暂存编辑并返回")}
  }
 }
