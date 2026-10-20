@@ -1,11 +1,16 @@
 package cn.buwei.nativeapp
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
@@ -79,13 +84,37 @@ internal val LocalReferenceBadges=staticCompositionLocalOf { ReferenceBadgeState
     }
 }
 
-@Composable internal fun NativeAppearanceSettings(theme:String,setTheme:suspend (String)->Unit) {
+@Composable internal fun NativeAppearanceSettings(theme:String,design:String="classic",setDesign:suspend (String)->Unit={},setTheme:suspend (String)->Unit) {
     val scope=rememberCoroutineScope(); val preference=LocalReferenceBadges.current
-    var error by remember { mutableStateOf<String?>(null) }
+    var error by remember { mutableStateOf<String?>(null) };var saving by remember{mutableStateOf(false)}
+    fun save(change:suspend()->Unit){if(saving)return;saving=true;scope.launch{try{change();error=null}catch(e:CancellationException){throw e}catch(_:Exception){error="未能保存外观，请重试。"}finally{saving=false}}}
+    val dark=theme=="dark"||(theme=="system"&&isSystemInDarkTheme())
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
         Text("外观",style=MaterialTheme.typography.headlineMedium)
-        listOf("system" to "跟随系统","light" to "浅色","dark" to "深色").forEach { (key,title) ->
-            TextButton({scope.launch {try{setTheme(key);error=null}catch(e:CancellationException){throw e}catch(_:Exception){error="未能保存主题，请重试。"}}}) {Text((if(theme==key)"✓ "else "")+title)}
+        Text("主题设计",style=MaterialTheme.typography.titleLarge)
+        Text("选择配色与卡片风格，立即应用到整个应用，并保存在此设备。",style=MaterialTheme.typography.bodyMedium)
+        listOf("classic" to "经典绿","prototype" to "舒展蓝").forEach{(key,title)->
+            NativeTheme(dark,key){
+                OutlinedCard(Modifier.fillMaxWidth().testTag("theme-design:$key").clip(MaterialTheme.shapes.medium).selectable(design==key,enabled=!saving,role=Role.RadioButton,onClick={save{setDesign(key)}}),
+                    border=BorderStroke(if(design==key)2.dp else 1.dp,if(design==key)MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant)){
+                    Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
+                        Row(verticalAlignment=androidx.compose.ui.Alignment.CenterVertically){
+                            RadioButton(selected=design==key,onClick=null,enabled=!saving)
+                            Column(Modifier.weight(1f)){Text(title,style=MaterialTheme.typography.titleMedium);Text(if(key=="prototype")"蓝色强调 · 冷灰底色 · 舒展卡片"else"绿色强调 · 温和底色 · 经典样式",style=MaterialTheme.typography.bodyMedium)}
+                        }
+                        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                            listOf(MaterialTheme.colorScheme.primary,MaterialTheme.colorScheme.secondary,MaterialTheme.colorScheme.tertiary).forEach{color->Surface(color=color,shape=MaterialTheme.shapes.small,modifier=Modifier.size(28.dp)) {}}
+                        }
+                        Surface(color=MaterialTheme.colorScheme.primaryContainer,contentColor=MaterialTheme.colorScheme.onPrimaryContainer,shape=MaterialTheme.shapes.small){Text("配色预览 · 项目工作区",Modifier.padding(10.dp),style=MaterialTheme.typography.bodyMedium)}
+                    }
+                }
+            }
+        }
+        Text("明暗模式",style=MaterialTheme.typography.titleLarge)
+        FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+            listOf("system" to "跟随系统","light" to "浅色","dark" to "深色").forEach { (key,title) ->
+                TextButton({save{setTheme(key)}},enabled=!saving) {Text((if(theme==key)"✓ "else "")+title)}
+            }
         }
         error?.let { Text(it,color=MaterialTheme.colorScheme.error) }
         HorizontalDivider()

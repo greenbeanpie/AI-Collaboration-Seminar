@@ -13,8 +13,8 @@ android {
         applicationId = "cn.buwei.mobile.nativepreview"
         minSdk = 26
         targetSdk = 37
-        versionCode = 6
-        versionName = "0.2.4-preview"
+        versionCode = 7
+        versionName = "0.2.5-preview"
         ndk { abiFilters += listOf("arm64-v8a","x86_64") }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "SERVICE_ORIGIN", "\"https://greenbp-team-office.hddhp.workers.dev\"")
