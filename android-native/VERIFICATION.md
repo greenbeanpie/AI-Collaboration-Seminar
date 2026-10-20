@@ -1,6 +1,26 @@
 # 原生 Android 迁移预览版验证报告
 
-## 当前交付：0.2.4-preview（2026-10-20）
+## 当前交付：0.2.5-preview（2026-10-20）
+
+本轮按 [双端原型](../docs/ui-prototypes/buwei-dual-platform-prototype.html) 的移动端设计新增「舒展蓝」，保留「经典绿」为默认。入口：**我的 → 外观 → 主题设计 → 舒展蓝**。设计与明暗模式独立，可选择跟随系统、浅色或深色；写入本机 DataStore 后立即应用，重新打开恢复。未知/旧偏好保持经典绿，保存失败保留原选择并允许重试。AI 引用偏好、现有账号及业务接口保持原规则。
+
+### 设计与代码
+
+- 提取原型的浅色 `#2563EB` 蓝、`#F5F7FB` 手机底色、白色卡片、`#6D28D9` 紫色辅助色；深色使用 `#161B26` 底色、`#222A3B` 表面及原型悬停蓝 `#60A5FA`，提高小字号可读性。常用前景/背景对比度均检查 ≥4.5:1。
+- 手机卡片圆角 15dp，控件层级 7/10/15/20/24dp；标题加重、正文增加行距，使用 Android 系统字体和可缩放字号。不引入字体包、图片背景、模糊层、WebView 或额外依赖。这是现有原生界面的主题扩展，没有把原型中的演示数据写入业务。
+- [PrototypeTheme.kt](app/src/main/java/cn/buwei/nativeapp/PrototypeTheme.kt)集中配色、圆角、字体；[NativeTheme.kt](app/src/main/java/cn/buwei/nativeapp/NativeTheme.kt)保存两项独立偏好并保留旧设置；[外观设置](app/src/main/java/cn/buwei/nativeapp/NativeReferencePreferences.kt)显示可选择预览与错误反馈；[MainActivity](app/src/main/java/cn/buwei/nativeapp/MainActivity.kt)全局应用并同步状态栏/导航栏明暗，读取保存值后再展示界面。
+
+### 安装包与验证
+
+- [签名 APK 0.2.5-preview](../output/android-native/buwei-native-0.2.5-preview-release.apk)，versionCode 7、5,586,133 bytes；复用原签名，v2/v3 验证通过。[构建元数据](../output/android-native/release-artifact.json)源提交 `fc5f5f5d6fc7f6243f318b586da7de335efd5b06`，`sourceTreeDirty=false`；后续仅更新文档。
+- SHA-256：`a3733838f3b369221f6252cfa2a45333ae2e4c2b7cf748e3d81425c4dc74e181`。另检查最终 APK DEX 中含新增主题名称与错误反馈文字，避免只验证 Debug。
+- [main Release 构建](../output/android-native/tests/0.2.5-main-release.log)通过：**165 项 JVM 测试**（新增 5 项主题/兼容/对比度规则）、R8、资源压缩和签名。[Lint](../output/android-native/tests/0.2.5-lint-debug.txt)：0 errors、1 项既有 BouncyCastle EST 告警，`-checkdiscard` 继续保证未保留 EST。工具链弃用提示仍存在。
+- API 37 手机[最终 8 项设备测试](../output/android-native/tests/0.2.5-theme-device.log)全部通过，16.760 秒：主题切换立即改变全局主色、深浅色与经典绿互换、模式独立保存、DataStore 关闭重建后恢复、非法设计值不覆盖原值、保存失败与重试、280dp/2 倍字体无横向裁切，以及原有 4 项 AI 引用偏好回归。使用隔离本机偏好和测试宿主，不涉及生产登录或业务写入；本轮未重跑完整业务套件，也未启动 BlueStacks 平板。
+- 已查看原生截图：[浅色](../output/android-native/0.2.5-theme/prototype-theme-light.png)、[深色](../output/android-native/0.2.5-theme/prototype-theme-dark.png)、[大字体](../output/android-native/0.2.5-theme/prototype-theme-large-font.png)。设置可纵向滚动，卡片与文本保持在宽度内；截图为 Compose 测试宿主，不能代表所有厂商设备和业务页面。
+- 最终签名包覆盖安装后，[初始页启动检查](../output/android-native/0.2.5-theme/smoke-20261020-112422/report.json)通过，默认仍是经典绿；截图已查看。没有登录真实账户，因此不声称签名 Release 内已人工走完授权后的外观设置流程；设置交互由上述 Debug 实际组件验证。
+- 本轮没有改动/部署后端或网页，没有付费模型调用。测试后已关闭临时无窗口手机模拟器，保留旧应用和数据；平板保持关闭。整体迁移的真实授权与外部服务边界沿用下方历史报告和[验收清单](docs/ACCEPTANCE.md)。
+
+## 历史交付：0.2.4-preview（不代表当前状态）
 
 本轮补齐文件/来源处理状态、派生页归属、录制元信息与云端详情，并修复自定义来源标题破坏原文件预览的问题。业务继续使用现有后端；没有新增替代接口或独立账号体系。真实授权、外部服务及物理设备验收仍未完成，不声明全量迁移目标已达成。
 
@@ -15,7 +35,7 @@
 
 - [Release APK](../output/android-native/buwei-native-0.2.4-preview-release.apk)：5,586,133 bytes（约 5.33 MiB），versionCode 6；独立包名 `cn.buwei.mobile.nativepreview`，最低 API 26，ARM64 / x86_64。
 - SHA-256：`b83ae00af8e19e4c7ac9f8fa03a2d9576a3cc590818903454dde20cd1c49ae28`。复用原签名，v2/v3 校验通过。
-- [构建元数据](../output/android-native/release-artifact.json)：源提交 `63707ecb3c475fcc69a75d6efc6e3d7b3bb77ecb`，`sourceTreeDirty=false`；最后仅更新报告。已合并同期 Windows 文档/资源审计改动，没有覆盖并行成果。
+- [历史构建元数据](../output/android-native/0.2.4-release-artifact.json)：源提交 `63707ecb3c475fcc69a75d6efc6e3d7b3bb77ecb`，`sourceTreeDirty=false`；最后仅更新报告。已合并同期 Windows 文档/资源审计改动，没有覆盖并行成果。
 - [主分支最终构建](../output/android-native/tests/0.2.4-final-main-release.log)通过：**160 项 JVM 测试**、Lint、R8、资源压缩和签名。[Lint](../output/android-native/tests/0.2.4-lint-debug.txt)为 0 errors、1 项既有 BouncyCastle EST 告警；Release `-checkdiscard` 确认 EST 未保留。Gradle/JDK/第三方 protobuf 弃用提示仍存在，未隐瞒或全局压制。
 - 完整基础 instrumentation **161 项**（源 `4878be75`，含本轮处理与录制、尚未加入最后的原文件名修复）：[API 37 手机](../output/android-native/tests/0.2.4-full-phone.log)161/161，通过，356.370 秒；[API 33 平板](../output/android-native/tests/0.2.4-full-tablet.log)160/161，通过 160、失败 1，431.827 秒。失败与修复证据见下文，不能写成最终全套双端通过。
 - 最后原文件名修复及测试时钟修正后，**30 项相关回归双端全部通过**：[手机](../output/android-native/tests/0.2.4-final-related-phone.log)70.417 秒；[平板](../output/android-native/tests/0.2.4-final-related-tablet.log)73.045 秒。包含真实 PDF 的无扩展标题/错误 MP3 标题预览、元信息身份不符不下载、拒权去除旧导出入口；录制 14 项；资料工作区 6 项及拒权读取 6 项。不是最终 165 项全套重跑。
