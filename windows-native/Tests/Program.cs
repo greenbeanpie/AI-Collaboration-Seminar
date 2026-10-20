@@ -55,6 +55,7 @@ if (OperatingSystem.IsWindows())
     using var repository = new ClientRepository(store, secrets, new FixtureHandler());
     Check((await repository.GetAsync("/capabilities"))?["ok"]?.GetValue<bool>() == true, "HTTP envelope contract");
 }
+await AppearanceChecks.RunAsync(Check);
 Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { passed = results.Count, tests = results }));
 
 sealed class FixtureHandler : HttpMessageHandler

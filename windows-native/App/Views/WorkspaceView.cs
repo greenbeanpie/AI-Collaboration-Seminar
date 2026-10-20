@@ -33,12 +33,16 @@ public sealed partial class WorkspaceView : UserControl
     private CancellationToken PageToken => pageLifetime.Token;
     private string Base => "/projects/" + Escape(projectId ?? throw new InvalidOperationException("请先选择项目"));
     public event Action<string>? StatusChanged;
+    public Func<Task>? AppearanceRequested { get; set; }
 
     public WorkspaceView(ClientRepository repository)
     {
         this.repository = repository;
         navigation.PaneHeader = Ui.Stack(Ui.Heading("补位"), Ui.Label("项目协作 · Windows", 12));
         navigation.Content = surface;
+        navigation.Background = AppearanceTheme.Brush("BuweiPageBrush");
+        surface.Background = AppearanceTheme.Brush("BuweiSurfaceBrush");
+        AppearanceTheme.Bind(navigation, NavigationView.OpenPaneLengthProperty, nameof(AppearanceTheme.NavigationWidth));
         navigation.ItemInvoked += async (_, e) => { if (e.InvokedItemContainer?.Tag is string route) await NavigateAsync(route); };
         Content = navigation;
         Loaded += OnLoaded;
@@ -82,7 +86,12 @@ public sealed partial class WorkspaceView : UserControl
         Add("帮助与工单", "support", Symbol.Help, true);
         if (repository.User.Text("role") is "admin" or "super_admin") Add("系统管理", "admin", Symbol.Admin, true);
         void Add(string title, string route, Symbol icon, bool footer = false)
-        { var item = new NavigationViewItem { Content = title, Tag = route, Icon = new SymbolIcon(icon) }; if (footer) navigation.FooterMenuItems.Add(item); else navigation.MenuItems.Add(item); }
+        {
+            var symbol = new SymbolIcon(icon);
+            if (route is "ai" or "bridge") symbol.Foreground = AppearanceTheme.Brush("BuweiAiBrush");
+            var item = new NavigationViewItem { Content = title, Tag = route, Icon = symbol };
+            if (footer) navigation.FooterMenuItems.Add(item); else navigation.MenuItems.Add(item);
+        }
     }
     public async Task NavigateAsync(string route)
     {
@@ -141,7 +150,11 @@ public sealed partial class WorkspaceView : UserControl
     { token.ThrowIfCancellationRequested(); surface.Children.Clear(); surface.Children.Add(Ui.Scroll(content)); }
     private static string Escape(string id) => Uri.EscapeDataString(id);
     private bool Can(string key) => membership.Text("role") == "owner" || membership?["permissions"].Flag(key) == true;
-    private StackPanel Page(string title, string description) => Ui.Stack(Ui.Heading(title), Ui.Label(description), Ui.Button("刷新", () => NavigateAsync(currentRoute)));
+    private StackPanel Page(string title, string description)
+    {
+        var subtitle = Ui.Label(description); subtitle.Foreground = AppearanceTheme.Brush("BuweiSecondaryTextBrush");
+        return Ui.Stack(Ui.Heading(title), subtitle, Ui.Button("刷新", () => NavigateAsync(currentRoute)));
+    }
     private Button Action(string title, Func<Task> work, string? confirmation = null, bool primary = false)
     {
         var owner = repository.AccountId;
@@ -156,7 +169,7 @@ public sealed partial class WorkspaceView : UserControl
                 if (confirmation != null)
                 {
                     var dialog = new ContentDialog { Title = title, Content = confirmation, PrimaryButtonText = "确认", CloseButtonText = "取消", XamlRoot = XamlRoot, DefaultButton = ContentDialogButton.Close };
-                    if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+                    if (await AppearanceTheme.ShowDialogAsync(dialog) != ContentDialogResult.Primary) return;
                 }
                 lifetime.ThrowIfCancellationRequested();
                 if (owner != repository.AccountId || generation != accountGeneration) return;
@@ -167,7 +180,7 @@ public sealed partial class WorkspaceView : UserControl
             {
                 if (lifetime.IsCancellationRequested || owner != repository.AccountId || generation != accountGeneration) return;
                 StatusChanged?.Invoke(error.Message);
-                await new ContentDialog { Title = "操作未完成", Content = error.Message + "\n填写内容仍保留。提交结果不明时，请先刷新核对服务端记录，再决定是否重试。", CloseButtonText = "知道了", XamlRoot = XamlRoot }.ShowAsync();
+                await AppearanceTheme.ShowDialogAsync(new ContentDialog { Title = "操作未完成", Content = error.Message + "\n填写内容仍保留。提交结果不明时，请先刷新核对服务端记录，再决定是否重试。", CloseButtonText = "知道了", XamlRoot = XamlRoot });
             }
         }, primary);
     }

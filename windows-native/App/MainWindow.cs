@@ -20,6 +20,7 @@ public sealed class MainWindow : Window
     private readonly ActivityGate activity = new();
     private readonly MainWindowViewModel model = new();
     private readonly ClientRepository repository;
+    private readonly AppearanceTheme appearance;
     private readonly NativeAuth auth;
     private readonly NativeFiles files;
     private readonly NativeUpdates updates;
@@ -56,6 +57,7 @@ public sealed class MainWindow : Window
 #if DEBUG
         if (origin != null) secrets.Write("session", new JsonObject { ["cookie"] = "ai_office_session=synthetic-fixture", ["user"] = new JsonObject { ["id"] = "00000000-0000-4000-8000-000000000001", ["displayName"] = "本机验收账号", ["role"] = "super_admin", ["isAdmin"] = true } }.ToJsonString());
 #endif
+        appearance = new AppearanceTheme(this, layout, directory);
         repository = new ClientRepository(new LocalStore(directory), secrets, origin: origin);
         auth = new NativeAuth(repository, secrets); files = new NativeFiles(this);
         updates = new NativeUpdates(Path.Combine(directory, "updates"), activity);
@@ -63,14 +65,12 @@ public sealed class MainWindow : Window
         if (File.Exists(preference) && bool.TryParse(File.ReadAllText(preference), out var saved)) autoRestart = saved;
         repository.StatusChanged += message => DispatcherQueue.TryEnqueue(() => SetStatus(message));
         repository.AccountChanged += () => { if (initialized) DispatcherQueue.TryEnqueue(async () => await RunAsync(AccountChangedAsync)); };
-        var bar = new Grid { ColumnSpacing = 8, RowSpacing = 8, Padding = new Thickness(16, 8, 16, 8) };
+        var bar = new Grid { Background = AppearanceTheme.Brush("BuweiNavigationBrush"), ColumnSpacing = 8, RowSpacing = 8, Padding = new Thickness(16, 8, 16, 8) };
         bar.Children.Add(new TextBlock { Text = "补位", FontSize = 22, Margin = new Thickness(0, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center });
         bar.Children.Add(Button("同步与冲突", SynchronizeAsync)); bar.Children.Add(Button("保存项目供离线使用", PrepareAsync));
         bar.Children.Add(Button("录制与恢复", CaptureAsync)); bar.Children.Add(Button("检查更新", () => UpdateAsync(true)));
         bar.Children.Add(Button("取消传输与离线准备", () => { transferStop.Cancel(); retiredTransfers.Add(transferStop); transferStop = new(); SetStatus("已请求停止传输与离线准备，已有断点和缓存保留"); return Task.CompletedTask; }));
-        var theme = new ComboBox { ItemsSource = new[] { "跟随系统", "浅色", "深色" }, SelectedIndex = 0, MinWidth = 110 };
-        theme.SelectionChanged += (_, _) => layout.RequestedTheme = theme.SelectedIndex switch { 1 => ElementTheme.Light, 2 => ElementTheme.Dark, _ => ElementTheme.Default };
-        bar.Children.Add(theme);
+        bar.Children.Add(Button("外观设置", ShowAppearanceAsync));
         bar.Children.Add(Button("退出登录", async () => { RequireSafe(); await repository.LogoutAsync(); SetStatus("已退出。本机草稿保留，重新授权同一账号后可继续。"); }));
         bar.SizeChanged += (_, _) =>
         {
@@ -82,7 +82,7 @@ public sealed class MainWindow : Window
             for (var i = 0; i < bar.Children.Count; i++) { Grid.SetColumn((FrameworkElement)bar.Children[i], i % columns); Grid.SetRow((FrameworkElement)bar.Children[i], i / columns); }
         };
         Grid.SetRow(content, 1); Grid.SetRow(status, 2); layout.Children.Add(bar); layout.Children.Add(content); layout.Children.Add(status);
-        layout.Background = (Brush)Application.Current.Resources["ApplicationPageBackgroundThemeBrush"];
+        layout.Background = AppearanceTheme.Brush("BuweiPageBrush");
         Content = layout; AppWindow.Resize(new global::Windows.Graphics.SizeInt32(1440, 960));
         tray = new NativeTray(this);
         tray.ShowRequested += () => { hidden = false; hiddenAt = DateTimeOffset.MinValue; };
@@ -94,7 +94,7 @@ public sealed class MainWindow : Window
             if (workspace != null && !await workspace.SaveBeforeCloseAsync()) { SetStatus("请先保存编辑或清空敏感输入后再进入托盘", true); return; }
             hidden = true; hiddenAt = DateTimeOffset.UtcNow; tray.HideWindow();
         };
-        Closed += (_, _) => { timer.Stop(); transferStop.Cancel(); transferStop.Dispose(); foreach (var token in retiredTransfers) token.Dispose(); notifications?.Dispose(); tray.Dispose(); repository.Dispose(); };
+        Closed += (_, _) => { appearance.Dispose(); timer.Stop(); transferStop.Cancel(); transferStop.Dispose(); foreach (var token in retiredTransfers) token.Dispose(); notifications?.Dispose(); tray.Dispose(); repository.Dispose(); };
         timer.Tick += async (_, _) => await BackgroundAsync();
     }
     public async Task InitializeAsync(string arguments)
@@ -107,7 +107,14 @@ public sealed class MainWindow : Window
     private Button Button(string label, Func<Task> work)
     {
         var button = new Button { Content = label, VerticalAlignment = VerticalAlignment.Center };
+        AppearanceTheme.Bind(button, Control.CornerRadiusProperty, nameof(AppearanceTheme.ControlCorner));
+        AppearanceTheme.Bind(button, Control.PaddingProperty, nameof(AppearanceTheme.ButtonPadding));
         button.Click += async (_, _) => { button.IsEnabled = false; try { await RunAsync(work); } finally { button.IsEnabled = true; } }; return button;
+    }
+    private async Task ShowAppearanceAsync()
+    {
+        var dialog = new ContentDialog { XamlRoot = layout.XamlRoot, Title = "外观设置", Content = new ScrollViewer { Content = new AppearanceSettingsView(appearance), MaxHeight = Math.Max(240, Math.Min(600, layout.ActualHeight - 160)), HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }, CloseButtonText = "完成" };
+        await AppearanceTheme.ShowDialogAsync(dialog);
     }
     private async Task RunAsync(Func<Task> work)
     { try { await work(); } catch (OperationCanceledException) { SetStatus("操作已取消"); } catch (Exception ex) { SetStatus(ex.Message, true); } }
@@ -133,12 +140,12 @@ public sealed class MainWindow : Window
             panel.Children.Add(new TextBlock { Text = "在系统浏览器中确认现有账号，即可打开项目、任务和资料。此版本独立安装，旧客户端的草稿和文件仍保留在原处。", TextWrapping = TextWrapping.Wrap, FontSize = 16 });
             panel.Children.Add(Button("使用现有账号登录", async () => { var uri = await auth.BeginAsync(); Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true }); SetStatus("请在浏览器确认登录，然后返回应用"); }));
             panel.Children.Add(new TextBlock { Text = "首次登录需要网络。完成离线准备后，可继续处理本机保存的内容。", TextWrapping = TextWrapping.Wrap });
-            content.Content = new Border { Background = (Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"], BorderBrush = (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"], BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(16), Child = panel, MaxWidth = 780, Margin = new Thickness(32), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+            content.Content = new Border { Background = AppearanceTheme.Brush("BuweiCardBrush"), BorderBrush = AppearanceTheme.Brush("BuweiStrokeBrush"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(16), Child = panel, MaxWidth = 780, Margin = new Thickness(32), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             SetStatus("首次使用请授权现有账号"); return;
         }
         media = new NativeMedia(Path.Combine(AccountDirectory(), "media"), activity);
         media.Failed += message => DispatcherQueue.TryEnqueue(() => SetStatus(message, true));
-        workspace = new WorkspaceView(repository);
+        workspace = new WorkspaceView(repository) { AppearanceRequested = ShowAppearanceAsync };
         workspace.StatusChanged += message => SetStatus(message);
         workspace.TaskFileUploadRequested = AddTaskFileAsync; workspace.TaskFileResumeUploadRequested = ResumeTaskFileUploadAsync;
         workspace.AddFileRequested = AddFileAsync; workspace.CaptureRequested = CaptureAsync; workspace.OpenAttachmentRequested = OpenAttachmentAsync;
@@ -304,7 +311,7 @@ public sealed class MainWindow : Window
         var import = new CheckBox { Content = taskFile == null ? "同时导入 Office 正文供项目 AI 使用" : "提取 Office 正文登记到任务材料（最多 60,000 字符，超限明确截断）", IsChecked = OfficeTextReader.IsSupported(source), Visibility = OfficeTextReader.IsSupported(source) ? Visibility.Visible : Visibility.Collapsed };
         options.Children.Add(import);
         var dialog = new ContentDialog { XamlRoot = layout.XamlRoot, Title = taskFile == null ? "确认上传原文件" : "确认上传并登记任务成果文件", Content = options, PrimaryButtonText = "上传", CloseButtonText = "保留在本机" };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        if (await AppearanceTheme.ShowDialogAsync(dialog) != ContentDialogResult.Primary) return;
         if (repository.Epoch != ownerEpoch) throw new InvalidOperationException("账户已变化，请重新打开任务。");
         using var busy = activity.Enter("文件暂存与上传");
         var owned = Path.Combine(AccountDirectory(), "files", "pending-" + Guid.NewGuid().ToString("N") + Path.GetExtension(source));
@@ -394,7 +401,7 @@ public sealed class MainWindow : Window
         var info = new FileInfo(source.Path);
         if (info.Length == 0 || info.Length > 10 * 1024 * 1024) throw new InvalidOperationException("创建草稿附件需为 1 字节至 10 MiB");
         var confirm = new ContentDialog { XamlRoot = layout.XamlRoot, Title = "上传创建草稿附件", Content = info.Name + "\n附件处理将沿用现有服务端策略，音视频可能触发模型任务。", PrimaryButtonText = "上传", CloseButtonText = "取消" };
-        if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
+        if (await AppearanceTheme.ShowDialogAsync(confirm) != ContentDialogResult.Primary) return;
         using var busy = activity.Enter("创建草稿附件上传"); var account = repository.AccountId;
         var draft = await repository.GetAsync("/creation-drafts/" + Guid.Parse(draftId));
         await using var stream = File.OpenRead(source.Path);
@@ -431,7 +438,7 @@ public sealed class MainWindow : Window
         if (body is FrameworkElement element && !double.IsNaN(element.Width)) element.Width = Math.Min(element.Width, Math.Max(260, layout.ActualWidth - 140));
         var dialog = new ContentDialog { XamlRoot = layout.XamlRoot, Title = title, Content = new ScrollViewer { Content = body, MaxHeight = Math.Max(240, Math.Min(550, layout.ActualHeight - 180)), HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }, CloseButtonText = "关闭" };
         dialog.Resources["ContentDialogMaxWidth"] = Math.Min(840, Math.Max(300, layout.ActualWidth - 60));
-        await dialog.ShowAsync();
+        await AppearanceTheme.ShowDialogAsync(dialog);
     }
     private async Task UpdateAsync(bool interactive)
     {

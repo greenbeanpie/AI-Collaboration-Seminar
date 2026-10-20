@@ -32,7 +32,7 @@ public sealed class RichDocumentEditor : UserControl
             {
                 var href = Ui.Field("HTTPS 地址或项目内路径", max: 2048);
                 var dialog = new ContentDialog { Title = "设置所选文字链接", Content = href, PrimaryButtonText = "保存", CloseButtonText = "取消", XamlRoot = XamlRoot };
-                if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+                if (await AppearanceTheme.ShowDialogAsync(dialog) != ContentDialogResult.Primary) return;
                 var value = href.Text.Trim();
                 if (value.Length > 0 && !(value.StartsWith('/') && !value.StartsWith("//", StringComparison.Ordinal)) && !(Uri.TryCreate(value, UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http" && uri.UserInfo.Length == 0)) { notice.Text = "请使用 HTTP/HTTPS 地址或项目内路径。"; return; }
                 Format("link", value.Length == 0 ? null : new JsonObject { ["href"] = value });
@@ -99,7 +99,7 @@ public sealed class RichDocumentEditor : UserControl
             field.TextChanged += (_, _) => { if (field.Text != node.Text("text")) Change(() => node["text"] = field.Text, false); };
             parent.Children.Add(field); return;
         }
-        if (type is "hardBreak" or "horizontalRule") { parent.Children.Add(new Border { Height = type == "hardBreak" ? 8 : 1, Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["DividerStrokeColorDefaultBrush"] }); return; }
+        if (type is "hardBreak" or "horizontalRule") { parent.Children.Add(new Border { Height = type == "hardBreak" ? 8 : 1, Background = AppearanceTheme.Brush("BuweiStrokeBrush") }); return; }
         var names = new Dictionary<string, string> { ["doc"] = "正文", ["paragraph"] = "段落", ["heading"] = "标题", ["bulletList"] = "无序列表", ["orderedList"] = "有序列表", ["listItem"] = "列表项", ["table"] = "表格", ["tableRow"] = "表格行", ["tableCell"] = "单元格", ["tableHeader"] = "表头", ["blockquote"] = "引用", ["codeBlock"] = "代码块" };
         if (!names.ContainsKey(type)) { parent.Children.Add(Ui.Card(Ui.Label(type == "citation" ? "已保留原文引用" : "已保留附加内容"), Ui.Label(node["attrs"].Id("label", "title", "text")))); return; }
         var container = Ui.Stack(); if (type != "doc") container.Children.Add(Ui.Label(names[type], type == "heading" ? 20 : 12));
@@ -118,7 +118,7 @@ public sealed class RichDocumentEditor : UserControl
                 var tools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
                 tools.Children.Add(Ui.Button("上移", () => { var index = children.IndexOf(child); if (index > 0) Change(() => { children.Remove(child); children.Insert(index - 1, child); }); return Task.CompletedTask; }));
                 tools.Children.Add(Ui.Button("下移", () => { var index = children.IndexOf(child); if (index < children.Count - 1) Change(() => { children.Remove(child); children.Insert(index + 1, child); }); return Task.CompletedTask; }));
-                tools.Children.Add(Ui.Button("删除块", async () => { var dialog = new ContentDialog { Title = "删除此内容块？", Content = "保存前可以撤销。", PrimaryButtonText = "删除", CloseButtonText = "保留", XamlRoot = XamlRoot }; if (await dialog.ShowAsync() == ContentDialogResult.Primary) Change(() => children.Remove(child)); }));
+                tools.Children.Add(Ui.Button("删除块", async () => { var dialog = new ContentDialog { Title = "删除此内容块？", Content = "保存前可以撤销。", PrimaryButtonText = "删除", CloseButtonText = "保留", XamlRoot = XamlRoot }; if (await AppearanceTheme.ShowDialogAsync(dialog) == ContentDialogResult.Primary) Change(() => children.Remove(child)); }));
                 container.Children.Add(tools);
             }
         }

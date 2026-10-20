@@ -20,19 +20,24 @@ internal static class Ui
     internal static StackPanel Stack(params UIElement[] children)
     {
         var panel = new StackPanel { Spacing = 12, HorizontalAlignment = HorizontalAlignment.Stretch };
+        AppearanceTheme.Bind(panel, StackPanel.SpacingProperty, nameof(AppearanceTheme.StackSpacing));
         foreach (var child in children) panel.Children.Add(child);
         return panel;
     }
     internal static TextBlock Label(string text, double size = 14) => new()
-    { Text = text, FontSize = size, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true };
-    internal static TextBlock Heading(string text) => new()
-    { Text = text, FontSize = 26, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap };
-    internal static Border Card(params UIElement[] content) => new()
+    { Text = text, FontSize = size, Foreground = AppearanceTheme.Brush("BuweiTextBrush"), TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true };
+    internal static TextBlock Heading(string text)
     {
-        Padding = new Thickness(20), CornerRadius = new CornerRadius(12), BorderThickness = new Thickness(1),
-        BorderBrush = new SolidColorBrush(ColorHelper.FromArgb(40, 120, 130, 125)),
-        Background = (Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"], Child = Stack(content)
-    };
+        var heading = Label(text, 26); heading.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold;
+        AppearanceTheme.Bind(heading, TextBlock.FontSizeProperty, nameof(AppearanceTheme.HeadingSize)); return heading;
+    }
+    internal static Border Card(params UIElement[] content)
+    {
+        var card = new Border { Padding = new Thickness(20), CornerRadius = new CornerRadius(12), BorderThickness = new Thickness(1),
+            BorderBrush = AppearanceTheme.Brush("BuweiStrokeBrush"), Background = AppearanceTheme.Brush("BuweiCardBrush"), Child = Stack(content) };
+        AppearanceTheme.Bind(card, Border.PaddingProperty, nameof(AppearanceTheme.CardPadding));
+        AppearanceTheme.Bind(card, Border.CornerRadiusProperty, nameof(AppearanceTheme.CardCorner)); return card;
+    }
     internal static TextBox Field(string label, string? value = "", bool multiline = false, int max = 4000)
     {
         var field = new TextBox { Header = label, Text = value ?? "", AcceptsReturn = multiline, TextWrapping = TextWrapping.Wrap,
@@ -52,12 +57,17 @@ internal static class Ui
     internal static Button Button(string title, Func<Task> action, bool primary = false)
     {
         var button = new Button { Content = title, MinHeight = 36, HorizontalAlignment = HorizontalAlignment.Left };
+        AppearanceTheme.Bind(button, Control.CornerRadiusProperty, nameof(AppearanceTheme.ControlCorner));
+        AppearanceTheme.Bind(button, Control.PaddingProperty, nameof(AppearanceTheme.ButtonPadding));
         if (primary) button.Style = (Style)Application.Current.Resources["AccentButtonStyle"];
         button.Click += async (_, _) => { button.IsEnabled = false; try { await action(); } finally { button.IsEnabled = true; } };
         return button;
     }
-    internal static ScrollViewer Scroll(UIElement child) => new()
-    { Content = child, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Padding = new Thickness(28, 20, 28, 40) };
+    internal static ScrollViewer Scroll(UIElement child)
+    {
+        var scroll = new ScrollViewer { Content = child, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Padding = new Thickness(28, 20, 28, 40) };
+        AppearanceTheme.Bind(scroll, Control.PaddingProperty, nameof(AppearanceTheme.PagePadding)); return scroll;
+    }
     internal static string Status(string value) => value switch
     {
         "active" => "进行中", "archived" => "已归档", "open" => "待领取", "in_progress" => "执行中",

@@ -10,6 +10,7 @@ public sealed partial class WorkspaceView
     private async Task<UIElement> AccountAsync(CancellationToken token)
     {
         var panel = Page("账户与安全", "账户设置仅修改当前登录账户。");
+        if (AppearanceRequested != null) panel.Children.Add(Ui.Card(Ui.Label("客户端外观", 20), Ui.Label("选择主题及明暗模式，即时生效并保存在本机。"), Action("外观与主题设置", AppearanceRequested)));
         panel.Children.Add(Ui.Label(repository.User.Text("username"), 20));
         panel.Children.Add(Action("全局个人资料与隐私", () => ReplaceAsync(PersonalProfileAsync)));
         var profileDraft = await repository.Store.LoadDraftAsync("account-profile");

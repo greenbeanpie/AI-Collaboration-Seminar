@@ -104,7 +104,7 @@ public sealed partial class WorkspaceView
                         foreach (var file in review.FileSet.Files) summary.Children.Add(Ui.Label(file.Name + "\n版本 " + file.VersionId));
                         if (review.FileSet.Files.Count == 0) summary.Children.Add(Ui.Label("本轮不包含成果文件。"));
                         var dialog = new ContentDialog { Title = "核对离线成果提交", Content = Ui.Scroll(summary), PrimaryButtonText = "保存待提交记录", CloseButtonText = "取消", DefaultButton = ContentDialogButton.Close, XamlRoot = XamlRoot };
-                        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+                        if (await AppearanceTheme.ShowDialogAsync(dialog) != ContentDialogResult.Primary) return;
                         submissionToken.ThrowIfCancellationRequested();
                         await repository.QueueReviewedSubmissionAsync(review, submittedText, submissionToken);
                         StatusChanged?.Invoke("成果已保存到本机队列，尚未提交。草稿保留；请到同步中心发起同步并核对结果。");
