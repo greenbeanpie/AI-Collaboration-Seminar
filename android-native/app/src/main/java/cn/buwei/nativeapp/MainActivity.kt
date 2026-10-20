@@ -99,12 +99,15 @@ class MainActivity:ComponentActivity() {
         val user by repository.account.collectAsStateWithLifecycle()
         val status by repository.status.collectAsStateWithLifecycle()
         val appearance=(application as NativeApplication).appearance
-        val theme by appearance.mode.collectAsStateWithLifecycle(initialValue="system")
+        val savedAppearance by appearance.settings.collectAsStateWithLifecycle(initialValue=null)
+        val currentAppearance=savedAppearance?:return
+        val theme=currentAppearance.mode;val design=currentAppearance.design
         val dark=theme=="dark" || (theme=="system" && isSystemInDarkTheme())
+        SideEffect{androidx.core.view.WindowCompat.getInsetsController(window,window.decorView).apply{isAppearanceLightStatusBars=!dark;isAppearanceLightNavigationBars=!dark}}
         BackHandler(user!=null&&section!="projects"){if(projectId!=null&&section!="overview")navigate("overview")else openGlobal("projects")}
         NativeReferencePreferences(appearance,user?.get("id")?.jsonPrimitive?.contentOrNull) {
-        NativeTheme(dark) {
-            Surface(Modifier.fillMaxSize()) {
+        NativeTheme(dark,design) {
+            Surface(Modifier.fillMaxSize(),color=MaterialTheme.colorScheme.background) {
                 if(busy) Box(Modifier.fillMaxSize().padding(32.dp)) { CircularProgressIndicator() }
                 else if(user==null) LoginView()
                 else BoxWithConstraints {
@@ -122,7 +125,7 @@ class MainActivity:ComponentActivity() {
                             if(section=="profile") AccountNavigation(user!!)
                             Box(Modifier.weight(1f).fillMaxWidth()) { key(repository.accountId,repository.epoch,section,projectId,model.destination) {
                                 when(section) {
-                                    "appearance" -> NativeAppearanceSettings(theme) { appearance.setMode(it) }
+                                    "appearance" -> NativeAppearanceSettings(theme,design,{appearance.setDesign(it)}) { appearance.setMode(it) }
                                     "offline" -> OfflineView(repository)
                                     "media" -> MediaWorkspace(repository,projectId){model.workspaceActive=it}
                                     "export" -> projectId?.let {ExportWorkspace(repository,it)}

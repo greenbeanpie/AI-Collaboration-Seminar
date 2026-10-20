@@ -27,7 +27,7 @@ node android-native/scripts/check-feature-routes.mjs
 ./android-native/scripts/build.ps1 -SigningDirectory 'C:/path/to/existing/signing'
 ```
 
-构建脚本从 APK 的 `output-metadata.json` 读取实际版本，输出至 `output/android-native/`。当前版本的命名为 `buwei-native-0.2.4-preview-debug.apk` 或 `buwei-native-0.2.4-preview-release.apk`，同时写入签名验证记录及 `debug-artifact.json` / `release-artifact.json`。元数据包含版本、包名、字节数、SHA-256、`sourceCommit` 和 `sourceTreeDirty`；后者记录受跟踪文件是否有未提交改动，不能用提交号代替对该标志的核对。
+构建脚本从 APK 的 `output-metadata.json` 读取实际版本，输出至 `output/android-native/`。当前版本的命名为 `buwei-native-0.2.5-preview-debug.apk` 或 `buwei-native-0.2.5-preview-release.apk`，同时写入签名验证记录及 `debug-artifact.json` / `release-artifact.json`。元数据包含版本、包名、字节数、SHA-256、`sourceCommit` 和 `sourceTreeDirty`；后者记录受跟踪文件是否有未提交改动，不能用提交号代替对该标志的核对。
 
 Release 启用 R8 和资源压缩，禁止明文网络。Debug 允许本机 MockWebServer 测试；服务源固定为现有后端。
 
@@ -62,3 +62,7 @@ FCM 公共客户端参数通过 Gradle 属性 `firebaseAppId`、`firebaseApiKey`
 PDFBox 的可选旧 JPEG2000 解码器未打包，图片渲染使用系统 PdfRenderer。BouncyCastle 中未使用的 EST 辅助类会触发依赖 Lint 告警；Release 配置使用 `-checkdiscard` 要求移除整个 EST 包，未放宽应用 TLS 校验。Baseline Profile 插件仍有 Gradle 弃用提示。
 
 媒体使用 ExoPlayer 解码、系统 SurfaceView 和 Compose 控制，没有引入 `media3-ui` 的备用 WebView 字幕组件。最终 APK 的 DEX 扫描结果以对应构建的验证报告为准；当前未提供内嵌字幕专用绘制。
+
+## 外观主题
+
+登录后进入「我的 → 外观 → 主题设计」，可选择「经典绿」或「舒展蓝」。舒展蓝提取自 `docs/ui-prototypes/buwei-dual-platform-prototype.html` 移动端的蓝色强调、冷灰底色、白色卡片和 15dp 圆角，提供深色藏蓝配色；明暗模式独立选择跟随系统、浅色或深色。选择即时应用并保存在设备本机，重启恢复，不影响账号、业务数据或 AI 引用偏好。保留安卓系统字体与字号缩放，不加载 HTML、字体包、模糊层或图片背景。
