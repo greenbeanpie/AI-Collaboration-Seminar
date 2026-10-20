@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>补位 AI 项目办公室 · 手机版原型</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:PingFang SC,HarmonyOS Sans SC,Microsoft YaHei,system-ui;background:#0e1030;color:#14142b;display:flex;justify-content:center;padding:28px 16px;min-height:100vh}
+.shell{display:flex;gap:28px;align-items:flex-start;max-width:1180px}
+.intro{color:#eef;width:330px;padding-top:18px}
+.intro h1{font-size:30px;line-height:1.35}
+.intro h1 b{background:linear-gradient(90deg,#a5b4ff,#e0aaff);-webkit-background-clip:text;background-clip:text;color:transparent}
+.intro p{color:#b9bee6;font-size:13.5px;line-height:1.9;margin:12px 0}
+.how{background:rgba(255,255,255,.08);border:1px dashed #6b74c9;border-radius:14px;padding:12px 14px;font-size:12.5px;line-height:2;color:#dfe3ff}
+.meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.meta span{font-size:11.5px;background:rgba(255,255,255,.12);padding:6px 10px;border-radius:999px;color:#e6e9ff}
+.phone{width:392px;height:844px;background:#05060f;border-radius:52px;padding:12px;flex-shrink:0}
+.screen{background:#f5f6fb;height:100%;border-radius:40px;overflow:hidden;position:relative;display:flex;flex-direction:column}
+.status{display:flex;justify-content:space-between;padding:14px 28px 4px;font-size:12px;font-weight:700}
+.view{flex:1;overflow-y:auto;padding:12px 14px 100px}
+.page{display:none}
+.page.on{display:block}
+.top{display:flex;gap:10px;align-items:center;margin:6px 2px 12px}
+.av{width:38px;height:38px;border-radius:13px;background:linear-gradient(135deg,#5b5ce2,#a855f7);color:#fff;display:grid;place-items:center;font-weight:800}
+.hero{background:linear-gradient(135deg,#171744,#4b3aaa 60%,#9b4dca);color:#fff;border-radius:20px;padding:16px}
+.hero h3{font-size:24px;margin:4px 0}
+.pillrow{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+.pill{font-size:11px;background:rgba(255,255,255,.2);padding:5px 10px;border-radius:999px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+.card{background:#fff;border:1px solid #e8eaf4;border-radius:16px;padding:13px}
+.card h5{font-size:11.5px;color:#7a8499}
+.big{font-size:22px;font-weight:800}
+.bar{height:7px;background:#edeff6;border-radius:99px;margin-top:8px;overflow:hidden}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,#5b5ce2,#a855f7)}
+.sect{font-size:13px;font-weight:800;margin:14px 4px 8px;display:flex;justify-content:space-between}
+.row{display:flex;gap:10px;align-items:center;background:#fff;border:1px solid #e8eaf4;border-radius:14px;padding:11px;margin-bottom:8px;cursor:pointer}
+.tag{font-size:10.5px;padding:3px 9px;border-radius:999px;font-weight:700;white-space:nowrap}
+.btn{border:none;border-radius:13px;padding:13px;font-weight:800;width:100%;cursor:pointer;font-size:14px}
+.p{background:linear-gradient(90deg,#5b5ce2,#8b5cf6);color:#fff}
+.g{background:#e9ebff;color:#4338ca}
+.seg{display:flex;background:#e7eaf3;border-radius:13px;padding:4px;gap:4px;margin:10px 0}
+.seg button{flex:1;border:none;background:transparent;padding:9px;border-radius:10px;font-size:12.5px;font-weight:700;color:#666;cursor:pointer}
+.seg button.on{background:#fff;color:#111}
+.b{background:#fff;border:1px solid #e8eaf4;border-radius:14px 14px 14px 4px;padding:11px;font-size:13px;line-height:1.7;margin-bottom:8px}
+.me{background:linear-gradient(90deg,#5b5ce2,#8b5cf6);color:#fff;border-radius:14px 14px 4px 14px;padding:10px 12px;font-size:13px;margin:0 0 8px 40px}
+.k{font-size:11.5px;color:#5b6478;background:#eef0f8;border:1.5px dashed #c9cfea;padding:8px 10px;border-radius:10px;line-height:1.75}
+.tab{position:absolute;left:12px;right:12px;bottom:12px;background:rgba(255,255,255,.95);border:1px solid #e6e9f3;border-radius:22px;display:flex;padding:7px}
+.tab button{flex:1;border:none;background:transparent;font-size:10px;color:#8a94a8;cursor:pointer;padding:6px;border-radius:15px}
+.tab button.on{color:#5b5ce2;background:#eef0ff;font-weight:800}
+.tab b{display:block;font-size:18px}
+.comp{position:absolute;left:14px;right:14px;bottom:80px;display:none;gap:8px}
+.comp.show{display:flex}
+.comp input{flex:1;border:1px solid #dfe3ef;border-radius:13px;padding:11px;background:#fff;outline:none}
+.comp button{border:none;background:#14142b;color:#fff;border-radius:13px;padding:0 16px;font-weight:800}
+.mask{position:absolute;inset:0;background:rgba(10,12,28,.5);display:none;z-index:20}
+.mask.show{display:block}
+.sheet{position:absolute;left:0;right:0;bottom:0;max-height:76%;background:#fff;border-radius:24px 24px 0 0;z-index:21;transform:translateY(105%);transition:.28s;display:flex;flex-direction:column}
+.sheet.show{transform:none}
+.sheet .hd{padding:12px 18px 6px;font-size:16px;font-weight:800;display:flex}
+.sheet .hd button{margin-left:auto;border:none;background:#f1f2f8;width:28px;height:28px;border-radius:50%;cursor:pointer}
+.sheet .bd{overflow-y:auto;padding:6px 16px 24px}
+.opt{border:1.5px solid #e8eaf4;border-radius:13px;padding:12px;margin-bottom:8px;cursor:pointer}
+.opt b{font-size:13.5px}
+.opt small{font-size:11.5px;color:#777}
+.toast{position:absolute;left:50%;bottom:110px;transform:translateX(-50%);background:#14142b;color:#fff;font-size:12.5px;padding:10px 16px;border-radius:11px;opacity:0;transition:.25s;z-index:30;white-space:nowrap}
+.toast.show{opacity:1}
+@media(max-width:900px){.intro{display:none}body{padding:0}.phone{border-radius:0;width:100%;max-width:430px;height:100vh;padding:0}.screen{border-radius:0}}
+</style>
+</head>
+<body>
+<div class="shell">
+<div class="intro">
+<h1>补位 AI<br><b>项目办公室 · 手机版</b></h1>
+<p>全新设计，不复用现有界面。围绕真实备赛链路：导入通知、确认要求、团队分工、AI 补位、采纳留痕、预审答辩、导出成果。底部 5 标签单手可达。</p>
+<div class="how">右侧为可交互原型：先登录，再点底部导航。首页、任务、AI补位、材料、我的。任务可勾选，AI 可切换代做、带做、只审，卡片点击弹层。</div>
+<div class="meta"><span>392px 机型框</span><span>鸢尾紫渐变</span><span>三档 AI</span><span>导出打印</span></div>
+</div>
+<div class="phone"><div class="screen">
+<div class="status"><span>9:41</span><span>5G 电量满格</span></div>
+<div class="view">
+<div class="page on" id="m-login"><div style="text-align:center;padding:22px 8px">
+<div style="width:62px;height:62px;border-radius:20px;background:linear-gradient(135deg,#5b5ce2,#a855f7,#06b6d4);display:grid;place-items:center;font-size:30px;margin:20px auto;color:#fff">补</div>
+<div style="font-size:21px;font-weight:800">补位 AI 项目办公室</div>
+<div style="font-size:12px;color:#7a8499;margin:6px 0 18px">导入 确认 分工 补位 预审 导出</div>
+<div class="card" style="text-align:left">邮箱 <input id="x" style="border:none;outline:none;flex:1" value="xiaoyu@sysu.edu.cn"></div>
+<div style="height:8px"></div>
+<div class="card" style="display:flex;gap:8px;text-align:left">验证码 <button class="g btn" style="width:110px;padding:8px" onclick="toast('验证码已发送，演示回显 482913')">获取</button></div>
+<div style="height:10px"></div>
+<button class="btn p" onclick="go('home')">登录 / 自动注册</button>
+<div class="k" style="margin-top:10px;text-align:left">演示说明：验证码登录，7 天会话，退出后清除本机业务草稿。</div>
+</div></div>
+<div class="page" id="m-home">
+<div class="top"><div class="av">创</div><div><div style="font-weight:800">创新教学项目组</div><div style="font-size:11.5px;color:#7a8499">5 人，指导教师 1 人，进行中</div></div></div>
+<div class="hero"><div style="font-size:11.5px;opacity:.85">距报名与材料提交截止</div><h3>还剩 18 天 · 10月8日</h3><div style="font-size:11.5px;opacity:.9">申报书PDF，作品介绍PDF，视频不超10分钟500MB</div><div class="pillrow"><span class="pill">要求已确认 v3</span><span class="pill">视频待预检</span></div></div>
+<div class="g2"><div class="card"><h5>任务进度</h5><div class="big">68%</div><div style="font-size:11px;color:#7a8499">13 / 19 已完成</div><div class="bar"><i style="width:68%"></i></div></div><div class="card"><h5>材料完整度</h5><div class="big" style="color:#dc2626">缺 2 项</div><div style="font-size:11px;color:#7a8499">应用成效，视频挂载</div><div class="bar"><i style="width:72%"></i></div></div></div>
+<div class="sect"><span>待处理事项</span><span style="color:#5b5ce2" onclick="go('task')">全部</span></div>
+<div class="row" onclick="sheet('req')"><span style="width:9px;height:9px;border-radius:50%;background:#f59e0b"></span><div style="flex:1"><div style="font-size:13px;font-weight:700">2 条要求等待人工确认</div><div style="font-size:11px;color:#7a8499">AI 已提取，负责人确认后冻结 v4</div></div><span class="tag" style="background:#fef3c7;color:#92400e">要求</span></div>
+<div class="row" onclick="go('ai')"><span style="width:9px;height:9px;border-radius:50%;background:#5b5ce2"></span><div style="flex:1"><div style="font-size:13px;font-weight:700">AI 草稿待采纳：创新点初稿</div><div style="font-size:11px;color:#7a8499">代做生成，需勾选已人工复核</div></div><span class="tag" style="background:#eef0ff;color:#4f46e5">AI</span></div>
+<div class="row" onclick="sheet('review')"><span style="width:9px;height:9px;border-radius:50%;background:#10b981"></span><div style="flex:1"><div style="font-size:13px;font-weight:700">预审报告可查看（模拟 82.5）</div><div style="font-size:11px;color:#7a8499">基于材料 v12，权重 20/25/20/25/10</div></div><span class="tag" style="background:#d1fae5;color:#065f46">预审</span></div>
+<button class="btn p" onclick="go('ai')">去 AI 补位缺口</button>
+<div style="height:8px"></div>
+<button class="btn g" onclick="sheet('import')">导入通知 / 资料</button>
+</div>
+<div class="page" id="m-task">
+<div class="top"><div><div style="font-weight:800;font-size:17px">任务工作台</div><div style="font-size:11.5px;color:#7a8499">负责人可派发，全员可评论</div></div></div>
+<div class="seg" id="ts"><button class="on" onclick="flt(0,this)">全部 19</button><button onclick="flt(1,this)">我负责 6</button><button onclick="flt(2,this)">待确认 3</button></div>
+<div id="tl"></div>
+<div class="sect"><span>评论动态</span></div>
+<div class="b">林老师：申报书第 3 节建议补一张落地流程图。<br><span style="font-size:11px;color:#7a8499">10 分钟前，关联材料 v12</span></div>
+<div class="b">阿哲：视频已剪到 9 分 42 秒，待预检体积与时长。</div>
+</div>
+<div class="page" id="m-ai">
+<div class="top"><div><div style="font-weight:800;font-size:17px">AI 补位工作区</div><div style="font-size:11.5px;color:#7a8499">模型不直写正式数据，先入草稿</div></div></div>
+<div class="seg" id="ms"><button class="on" onclick="mode(0,this)">代做</button><button onclick="mode(1,this)">带做</button><button onclick="mode(2,this)">只审</button></div>
+<div class="k" id="md">代做：选任务加关联来源与材料版本，一键生成可编辑草稿。采纳创建新版本并保留 AI 原文。</div>
+<div style="height:8px"></div>
+<div class="b">AI 已锁定任务 T-07 撰写创新点，加来源省赛通知 v3 片段 4 条，加材料 v11。预算充足，并发占用 1/2。可以开始吗？</div>
+<div class="me">开始吧，突出课堂痛点、AI 补位、可复制这条线</div>
+<div class="b">草稿已生成 823 字：痛点、补位、成效留空待填（不虚构）。引用 4 处均可跳转原文页。</div>
+<div style="display:flex;gap:8px"><button class="btn p" style="flex:1" onclick="toast('已采纳为材料 v14 草案，保留 AI 原文对照')">采纳为新版本</button><button class="btn g" style="flex:1" onclick="toast('已要求 AI 再改一版')">再改一版</button></div>
+<div style="font-size:11px;color:#7a8499;margin:8px 4px">本人已人工复核，采纳记入账本，AI 不会直接标任务完成</div>
+</div>
+<div class="page" id="m-doc">
+<div class="top"><div><div style="font-weight:800;font-size:17px">材料中心</div><div style="font-size:11.5px;color:#7a8499">作品介绍，v13 草案，已同步</div></div></div>
+<div class="card"><div style="font-weight:800;font-size:13px">作品介绍（7 段式模板）</div><div style="font-size:12px;color:#555;margin-top:6px;line-height:1.85">名称，关键词，概要，教育痛点，创新点，落地场景，应用成效（待填，不虚构）</div><div class="bar"><i style="width:80%"></i></div></div>
+<div class="card" style="margin-top:10px"><div style="font-weight:800;font-size:13px">创新点 <span class="tag" style="background:#eef0ff;color:#4f46e5">AI 草稿加人工改</span></div><p style="font-size:13px;line-height:1.9;margin-top:6px">以 AI 补位、人工兜底为核心：常规批改由 AI 先行完成初筛，教师聚焦高价值反馈。所有 AI 输出先入草稿，采纳须人工确认并留痕。</p></div>
+<div class="sect"><span>版本历史</span></div>
+<div class="row"><div style="flex:1"><div style="font-size:13px;font-weight:700">v13 草案（当前）</div><div style="font-size:11px;color:#7a8499">采纳 AI 草稿，10:21</div></div><span class="tag" style="background:#eef0ff;color:#4f46e5">当前</span></div>
+<div class="row"><div style="flex:1"><div style="font-size:13px;font-weight:700">v12 正式，预审关联版本</div><div style="font-size:11px;color:#7a8499">已冻结，不可改</div></div><span class="tag" style="background:#f1f2f8;color:#555">锁定</span></div>
+<button class="btn p" onclick="sheet('export')">导出 Markdown / 打印 PDF</button>
+</div>
+<div class="page" id="m-mine">
+<div class="top"><div class="av">晓</div><div><div style="font-weight:800">陈晓宇，负责人</div><div style="font-size:11.5px;color:#7a8499">xiaoyu@sysu.edu.cn</div></div></div>
+<div class="card"><div style="font-weight:800;font-size:13px">通知导入</div><div style="font-size:11.5px;color:#666;margin:5px 0">图片，PDF 不超 10MB 30 页，粘贴文字，公开链接</div><div style="display:flex;gap:8px"><button class="btn p" style="flex:1;padding:10px" onclick="sheet('import')">导入</button><button class="btn g" style="flex:1;padding:10px" onclick="sheet('team')">团队</button></div></div>
+<div class="sect"><span>预审，模拟 82.5 分</span><span style="color:#5b5ce2" onclick="sheet('review')">详情</span></div>
+<div class="card"><div class="sect" style="margin:0 0 6px"><span>创新性 20 分</span><span>17</span></div><div class="bar" style="margin:0"><i style="width:85%"></i></div><div class="sect" style="margin:8px 0 6px"><span>科学性 25 分</span><span>20</span></div><div class="bar" style="margin:0"><i style="width:80%"></i></div><div style="font-size:11px;color:#7a8499;margin-top:6px">材料更新后提示报告针对旧版本</div></div>
+<div class="card" style="margin-top:10px"><div style="font-weight:800;font-size:13px">答辩演练（文字逐题）</div><div class="b" style="margin-top:8px">评委：如果学校没有条件配 GPU，方案还能落地吗？</div><button class="btn g" onclick="toast('已开始本轮练习')">开始练习</button></div>
+<div class="sect"><span>过程账本</span></div>
+<div class="k">决策 12 条，贡献 34 条，AI 调用 28 次。<br>第三方来源已声明，支持补录与更正。</div>
+</div>
+</div>
+<div class="comp" id="comp"><input id="ci" placeholder="输入追问或回答"><button onclick="sendMsg()">发送</button></div>
+<div class="mask" id="mask" onclick="cs()"></div>
+<div class="sheet" id="sheet"><div style="width:44px;height:5px;background:#e2e5ef;border-radius:99px;margin:10px auto 2px"></div><div class="hd"><span id="st"></span><button onclick="cs()">关</button></div><div class="bd" id="sb"></div></div>
+<div class="toast" id="toast"></div>
+<div class="tab" id="tab" style="display:none">
+<button class="on" id="b-home" onclick="go('home')"><b>首</b>首页</button>
+<button id="b-task" onclick="go('task')"><b>任</b>任务</button>
+<button id="b-ai" onclick="go('ai')"><b>智</b>AI补位</button>
+<button id="b-doc" onclick="go('doc')"><b>稿</b>材料</button>
+<button id="b-mine" onclick="go('mine')"><b>我</b>我的</button>
+</div>
+</div></div>
+</div>
+<script>
+var tasks=[["完成申报书承诺页扫描","林老师，明天",1],["撰写创新点 800 字","我，今天",0],["剪辑答辩视频不超 10 分钟","阿哲，10-03",0],["补真实试用数据","晓宇，10-05",0],["确认评分标准 v2","负责人，待确认",0]];
+var f=0;
+function rt(){var h="";for(var i=0;i<tasks.length;i++){if(f==1&&i!=1&&i!=3)continue;if(f==2&&i!=4&&i!=3)continue;var d=tasks[i][2]==1;h+='<div class="row"><input type="checkbox" '+(d?"checked":"")+' onchange="tg('+i+')" style="width:19px;height:19px"><div style="flex:1"><div style="font-size:13px;font-weight:700">'+tasks[i][0]+'</div><div style="font-size:11px;color:#7a8499">'+tasks[i][1]+'</div></div><span class="tag" style="background:'+(d?"#d1fae5;color:#065f46":"#eef0ff;color:#4f46e5")+'">'+(d?"已完成":"进行中")+'</span></div>'}document.getElementById("tl").innerHTML=h}
+function tg(i){tasks[i][2]=tasks[i][2]?0:1;rt();toast(tasks[i][2]?"任务完成":"已重新打开")}
+function flt(n,b){f=n;var c=document.getElementById("ts").children;for(var i=0;i<c.length;i++)c[i].className="";b.className="on";rt()}
+var ds=["代做：选任务加关联版本，一键生成草稿。","带做：AI 按步骤提问，你答一步成稿一步。","只审：不改原文，只给问题加依据加建议。"];
+function mode(i,b){var cc=document.getElementById("ms").children;for(var j=0;j<cc.length;j++)cc[j].className="";b.className="on";document.getElementById("md").textContent=ds[i];toast(["已切换代做","已切换带做","已切换只审"][i])}
+function sendMsg(){var v=document.getElementById("ci").value;if(!v){toast("请先输入内容");return}toast("已发送，AI 生成中");document.getElementById("ci").value=""}
+function go(n){var ps=document.querySelectorAll(".page");for(var i=0;i<ps.length;i++)ps[i].classList.remove("on");document.getElementById("m-"+n).classList.add("on");document.getElementById("tab").style.display="flex";var bs=document.querySelectorAll(".tab button");for(var j=0;j<bs.length;j++)bs[j].classList.remove("on");var t=document.getElementById("b-"+n);if(t)t.classList.add("on");document.getElementById("comp").className="comp"+(n=="ai"?" show":"");document.querySelector(".view").scrollTop=0}
+function sheet(k){document.getElementById("st").textContent=S[k].t;document.getElementById("sb").innerHTML=S[k].b;document.getElementById("mask").classList.add("show");document.getElementById("sheet").classList.add("show")}
+function cs(){document.getElementById("mask").classList.remove("show");document.getElementById("sheet").classList.remove("show")}
+var tt=null;function toast(m){var t=document.getElementById("toast");t.textContent=m;t.classList.add("show");if(tt)clearTimeout(tt);tt=setTimeout(function(){t.classList.remove("show")},2100)}
+var S={import:{t:"导入通知 / 资料",b:'<div class="opt"><div><b>图片 / 扫描页</b><br><small>视觉模型识别，表格保留</small></div></div><div class="opt"><div><b>PDF 文件</b><br><small>不超 10MB，30 页，加密显式报错</small></div></div><div class="opt"><div><b>粘贴文字</b><br><small>划分片段，定位原文</small></div></div><div class="opt"><div><b>公开网页链接</b><br><small>仅允许域名，失败保留链接</small></div></div>'},req:{t:"要求确认 v4 草稿",b:'<div class="k">原文对照 AI 建议，缺失显示待确认，不虚构权重与时刻</div><div style="height:8px"></div><div class="opt"><div><b>参赛人数不超 5 人（不含指导教师）</b><br><small>依据通知第 2 页片段 3</small></div></div><div class="opt"><div><b>视频不超 10 分钟且不超 500MB</b><br><small>依据通知第 5 页片段 12</small></div></div><div class="opt"><div><b>最终提交时刻缺失</b><br><small>显示待确认，不虚构</small></div></div><button class="btn p" onclick="cs();toast(\'要求集 v4 已确认冻结\')">负责人确认冻结</button>'},team:{t:"团队分工",b:'<div class="opt"><div><b>林老师，指导</b><br><small>要求把关，每周 2 小时</small></div></div><div class="opt"><div><b>阿哲，视频技术</b><br><small>任务 T-11，每周 6 小时</small></div></div><div class="k">缺口：美编排版缺人，建议代做生成申报书版式初稿</div><div style="height:8px"></div><button class="btn p" onclick="cs();toast(\'分工建议已应用到任务\')">应用 AI 建议</button>'},review:{t:"预审报告（模拟）",b:'<div class="k">基于 v12，权重 20/25/20/25/10，新版材料后标为旧版报告</div><div style="height:8px"></div><div class="opt"><div><b>创新性 17 / 20</b><br><small>缺少横向对比表</small></div></div><div class="opt"><div><b>科学性 20 / 25</b><br><small>引用 12 处可查</small></div></div><div class="opt"><div><b>成效 12 / 25</b><br><small>无真实数据，不虚构</small></div></div><button class="btn p" onclick="cs();toast(\'已用最新版本重新预审\')">重新预审</button>'},export:{t:"导出成果",b:'<div class="opt"><div><b>Markdown 导出包</b><br><small>材料加引用加版本说明</small></div></div><div class="opt"><div><b>打印 PDF</b><br><small>分页，表格，中文字体</small></div></div><div class="opt"><div><b>视频预检（本地）</b><br><small>时长，体积，可读，不上传</small></div></div>'}};
+rt();
+</script>
+</body>
+</html>
