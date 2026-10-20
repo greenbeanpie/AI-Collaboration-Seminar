@@ -25,7 +25,7 @@
 
 - `Core/AppearancePreferences.cs`：两种主题、三种模式、配色及版本化设备偏好；不依赖服务端或登录账户。
 - `%LOCALAPPDATA%/Buwei.Windows.Native/appearance.json`：小型本机配置。先写同目录唯一临时文件，再替换；保存失败不应用新主题，界面回到原选择。无效或未知版本配置回退默认并保留原文件，在设置内说明原因。测试/基准目录沿用各自独立配置。
-- `App/AppearanceTheme.cs`：共享画刷原位更新、布局属性绑定、系统明暗与高对比度事件、原生标题栏和弹窗同步。资源键按固定 WinUI 版本的 `generic.xaml` 核对。
+- `App/AppearanceTheme.cs`：共享画刷原位更新、布局属性绑定、系统明暗与高对比度事件、原生标题栏和弹窗同步。资源键按固定 WinUI 版本的 `generic.xaml` 核对。`App/Platform/DesktopAppearance.cs` 使用 HWND 子类接收 `WM_SETTINGCHANGE`、`WM_SYSCOLORCHANGE`、`WM_THEMECHANGED`，通过 `SystemParametersInfo(SPI_GETHIGHCONTRAST)` 和 `GetSysColor` 读取桌面无障碍配色，不订阅导致 0.1.3 启动失败的 `AccessibilitySettings.HighContrastChanged`。
 - 设置更新不会调用业务导航、重新拉取数据或重建工作区；编辑控件对象和草稿处理链保留。系统事件订阅在窗口关闭时释放。
 
 ## 已执行验证
@@ -39,3 +39,17 @@
 ## 待实机验收
 
 本轮未操作 GUI 自动化、安装新版或切换真实 Windows 高对比度；此前停止 GUI 自动化的约束仍保留。尚未取得原生窗口截图，也未实测输入法、缩放、键盘焦点、屏幕阅读器、编辑中切换或实际系统色变化。代码层面的实时绑定和数值对比度检查不能代替以上实机验收。未重新测量 CPU/内存；旧包性能结果仅适用于其冻结版本。
+
+## 0.1.4 启动修复与发布门禁
+
+0.1.3 在本机实际启动时，主题构造函数订阅 WinRT 高对比度事件抛出 `COMException 0x80070490`，窗口未显示；编译和原有测试未发现这个运行时问题。0.1.4 改用桌面设置消息，保留高对比度支持；启动异常会记录并退出释放单实例句柄，避免后续启动持续等待失败实例。
+
+`scripts/build.ps1 -Package` 现在必须先执行 `scripts/verify-startup.ps1`：实际启动同一份 Release 发布目录，检查 30 秒内创建原生窗口、持续 10 秒存活及响应、第二次启动转交后正常退出、没有新增启动诊断。检查仅使用隔离 benchmark 配置和本次创建的进程，不操作界面；结束后终止自有测试进程。已有 benchmark 实例时拒绝运行。主目录、账户数据与旧客户端不变。此门禁要求交互式 Windows 桌面，不能以构建成功代替启动验证。
+
+本机对照：0.1.3 被该门禁拒绝，0.1.4 通过；可复现命令：
+
+```powershell
+./windows-native/scripts/verify-startup.ps1 -PublishDirectory ./output/windows-native/0.1.4/payload -ReportPath ./output/windows-native/0.1.4/startup-verification.json
+```
+
+高对比度实现依据：[Microsoft 桌面高对比度参数](https://learn.microsoft.com/en-us/windows/win32/winauto/high-contrast-parameter)。上述启动证据不代表登录、业务角色、主题切换视觉或真实系统高对比度验收通过。

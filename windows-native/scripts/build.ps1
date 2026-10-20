@@ -22,6 +22,9 @@ try {
     if ($Package) {
         if ($Debug) { throw 'Debug synthetic fixture builds must never be packaged.' }
         if (!$RuntimeInstaller) { throw 'Provide the verified Microsoft Windows App Runtime 2.5.1 x64 installer.' }
+        # Building and resource checks cannot detect desktop-only WinRT startup failures.
+        # Package only after this exact Release payload creates a responsive native window.
+        & (Join-Path $PSScriptRoot 'verify-startup.ps1') -PublishDirectory $PublishDirectory -ReportPath (Join-Path $OutputDirectory 'startup-verification.json')
         $fileVersion = [Version](Get-Item -LiteralPath (Join-Path $PublishDirectory 'Buwei.Windows.Native.exe')).VersionInfo.FileVersion
         $packageVersion = '{0}.{1}.{2}' -f $fileVersion.Major, $fileVersion.Minor, $fileVersion.Build
         & (Join-Path $PSScriptRoot 'package.ps1') -PublishDirectory $PublishDirectory -RuntimeInstaller $RuntimeInstaller -Version $packageVersion -OutputDirectory $OutputDirectory

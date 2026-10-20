@@ -29,6 +29,18 @@ public partial class App : Application
     }
     protected override async void OnLaunched(LaunchActivatedEventArgs args)
     {
+        try { await LaunchAsync(); }
+        catch (Exception error)
+        {
+            RecordFailure(error);
+            // A failed startup must release the single-instance handle instead of leaving
+            // subsequent launches waiting on a process that never created its pipe.
+            instance?.Dispose();
+            Exit();
+        }
+    }
+    private async Task LaunchAsync()
+    {
         var channel = Environment.GetCommandLineArgs().Contains("--benchmark") ? ".Benchmark" : "";
 #if DEBUG
         if (Environment.GetEnvironmentVariable("BUWEI_WINDOWS_SMOKE") == "1") channel = ".Smoke";
@@ -44,7 +56,7 @@ public partial class App : Application
                 using var writer = new StreamWriter(pipe, Encoding.UTF8) { AutoFlush = true };
                 await writer.WriteLineAsync(arguments);
             }
-            finally { Exit(); }
+            finally { instance.Dispose(); Exit(); }
             return;
         }
         window = new MainWindow();

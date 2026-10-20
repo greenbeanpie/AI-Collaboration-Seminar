@@ -5,7 +5,7 @@ using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Windows.UI;
-using Windows.UI.ViewManagement;
+using Buwei.Windows.Platform;
 
 namespace Buwei.Windows;
 
@@ -15,8 +15,7 @@ public sealed class AppearanceTheme : INotifyPropertyChanged, IDisposable
     private readonly FrameworkElement root;
     private readonly Window window;
     private readonly AppearancePreferencesStore store;
-    private readonly AccessibilitySettings accessibility = new();
-    private readonly UISettings system = new();
+    private readonly DesktopAppearance desktop;
     private bool disposed;
     public AppearancePreferences Preferences { get; private set; }
     public string? LoadWarning { get; private set; }
@@ -44,8 +43,7 @@ public sealed class AppearanceTheme : INotifyPropertyChanged, IDisposable
             "AccentButtonBackground", "AccentButtonBackgroundPointerOver", "AccentButtonBackgroundPressed", "AccentButtonForeground", "AccentButtonForegroundPointerOver", "AccentButtonForegroundPressed", "ButtonBackground", "ButtonBackgroundPointerOver", "ButtonForeground", "ButtonBorderBrush" })
             Application.Current.Resources[key] = new SolidColorBrush();
         root.ActualThemeChanged += ThemeChanged; root.Loaded += Loaded;
-        accessibility.HighContrastChanged += HighContrastChanged;
-        system.ColorValuesChanged += SystemColorsChanged;
+        desktop = new DesktopAppearance(window, ApplyPalette);
         Apply();
     }
     public async Task SetAsync(AppearancePreferences value)
@@ -81,9 +79,9 @@ public sealed class AppearanceTheme : INotifyPropertyChanged, IDisposable
     {
         if (disposed) return;
         var palette = AppearancePalette.Resolve(Preferences.Design, root.ActualTheme == ElementTheme.Dark);
-        var highContrast = accessibility.HighContrast;
-        var background = highContrast ? system.GetColorValue(UIColorType.Background) : Color(palette.Page);
-        var foreground = highContrast ? system.GetColorValue(UIColorType.Foreground) : Color(palette.Text);
+        var highContrast = DesktopAppearance.HighContrast;
+        var background = highContrast ? DesktopAppearance.SystemColor(false) : Color(palette.Page);
+        var foreground = highContrast ? DesktopAppearance.SystemColor(true) : Color(palette.Text);
         var accent = highContrast ? foreground : Color(palette.Accent);
         var secondary = highContrast ? foreground : Color(palette.SecondaryText);
         Paint("BuweiPageBrush", background);
@@ -118,13 +116,11 @@ public sealed class AppearanceTheme : INotifyPropertyChanged, IDisposable
     }
     private void ThemeChanged(FrameworkElement sender, object args) { ApplyPalette(); PropertyChanged?.Invoke(this, new(nameof(EffectiveTheme))); }
     private void Loaded(object sender, RoutedEventArgs args) => ApplyPalette();
-    private void HighContrastChanged(AccessibilitySettings sender, object args) => root.DispatcherQueue.TryEnqueue(ApplyPalette);
-    private void SystemColorsChanged(UISettings sender, object args) => root.DispatcherQueue.TryEnqueue(ApplyPalette);
     public void Dispose()
     {
         disposed = true;
         root.ActualThemeChanged -= ThemeChanged; root.Loaded -= Loaded;
-        accessibility.HighContrastChanged -= HighContrastChanged; system.ColorValuesChanged -= SystemColorsChanged;
+        desktop.Dispose();
         if (Current == this) Current = null;
     }
 }
