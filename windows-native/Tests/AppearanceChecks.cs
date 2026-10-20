@@ -51,8 +51,12 @@ internal static class AppearanceChecks
             var repo = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
             var project = System.Xml.Linq.XDocument.Load(Path.Combine(repo, "windows-native/App/Buwei.Windows.csproj"));
             var winui = project.Descendants("PackageReference").Single(x => (string?)x.Attribute("Include") == "Microsoft.WindowsAppSDK.WinUI");
-            var packageRoot = Environment.GetEnvironmentVariable("NUGET_PACKAGES") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nuget/packages");
-            var generic = await File.ReadAllTextAsync(Path.Combine(packageRoot, "microsoft.windowsappsdk.winui", (string)winui.Attribute("Version")!, "lib/native/Microsoft.UI/Themes/generic.xaml"));
+            var assetsPath = Path.Combine(repo, "windows-native/App/obj/project.assets.json");
+            var packageRoots = File.Exists(assetsPath)
+                ? System.Text.Json.Nodes.JsonNode.Parse(await File.ReadAllTextAsync(assetsPath))!["packageFolders"]!.AsObject().Select(x => x.Key)
+                : new[] { Environment.GetEnvironmentVariable("NUGET_PACKAGES") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".nuget/packages") };
+            var genericPath = packageRoots.Select(path => Path.Combine(path, "microsoft.windowsappsdk.winui", (string)winui.Attribute("Version")!, "lib/native/Microsoft.UI/Themes/generic.xaml")).First(File.Exists);
+            var generic = await File.ReadAllTextAsync(genericPath);
             var controller = await File.ReadAllTextAsync(Path.Combine(repo, "windows-native/App/AppearanceTheme.cs"));
             var registration = controller[controller.IndexOf("foreach (var key in new[]", StringComparison.Ordinal)..controller.IndexOf("root.ActualThemeChanged +=", StringComparison.Ordinal)];
             var keys = Regex.Matches(registration, "\"([A-Za-z][A-Za-z0-9]+)\"").Select(m => m.Groups[1].Value).Where(x => !x.StartsWith("Buwei", StringComparison.Ordinal));
