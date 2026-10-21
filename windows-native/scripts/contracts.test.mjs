@@ -21,7 +21,7 @@ test('inventory contains only method operations, grouped by route family', () =>
 });
 test('generated inventories are reproducible and stale content fails check', t => {
   const root = fixture(t); assert.equal(generate(root), 3); assert.equal(generate(root, true), 3);
-  const target = path.join(root, 'windows-native/docs/operation-inventory.json');
+  const target = path.join(root, 'windows-native/scripts/operation-inventory.json');
   fs.writeFileSync(target, '{}'); assert.throws(() => generate(root, true), /Stale/);
 });
 test('literal repository calls and write wrapper arguments resolve; dynamic values remain unknown', () => {

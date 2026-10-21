@@ -1,4 +1,4 @@
-const {chromium}=require(process.env.UI_PLAYWRIGHT_PATH||'playwright');const {origin}=require('./audit-ui.cjs');const fs=require('node:fs');const path=require('node:path');const root=path.resolve(process.argv[2]||'docs/evidence/ui-audit');
+const {chromium}=require(process.env.UI_PLAYWRIGHT_PATH||'playwright');const {origin}=require('./audit-ui.cjs');const fs=require('node:fs');const path=require('node:path');const root=path.resolve(process.argv[2]||'output/verification/ui-audit');
 (async()=>{const browser=await chromium.launch();const results=[];
 await Promise.all([1440,390].flatMap(width=>['light','dark'].map(async theme=>{const context=await browser.newContext({viewport:{width,height:900},colorScheme:theme,serviceWorkers:'block'});const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
 await page.goto(origin+'/guest/index.html');await page.waitForTimeout(650);await page.screenshot({path:path.join(root,`guest-${width}-${theme}-login.png`),fullPage:true});await page.locator('[data-act="demo-login"]').click();

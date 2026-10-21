@@ -2,9 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Download, Search } from 'lucide-react';
 import { PageHeading } from '../components/ui';
-import userGuide from '../help/USER-GUIDE.md?raw';
-import technicalGuide from '../help/TECHNICAL-IMPLEMENTATION.md?raw';
-import databaseGuide from '../help/DATABASE-SCHEMA.md?raw';
+import { userGuide, technicalGuide, databaseGuide } from 'virtual:project-help';
 import './HelpPage.css';
 
 const documents = {

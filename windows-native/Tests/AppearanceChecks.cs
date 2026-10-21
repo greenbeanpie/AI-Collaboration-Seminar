@@ -39,7 +39,7 @@ internal static class AppearanceChecks
                 check(Contrast(p.Text, p.Card) >= 4.5 && Contrast(p.SecondaryText, p.Card) >= 4.5 && Contrast(p.Text, p.Page) >= 4.5, $"Readable body and secondary text: {design}/{dark}");
                 check(Contrast("#FFFFFF", p.Accent) >= 4.5 && Contrast("#FFFFFF", p.AccentHover) >= 4.5 && Contrast(p.AccentText, p.AccentSoft) >= 4.5 && Contrast(p.Ai, p.AiSoft) >= 4.5, $"Readable accent buttons and preview chips: {design}/{dark}");
             }
-            var source = await File.ReadAllTextAsync(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../docs/ui-prototypes/buwei-dual-platform-prototype.html")));
+            var source = await File.ReadAllTextAsync(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../windows-native/Tests/Fixtures/prototype-theme.css")));
             foreach (var dark in new[] { false, true })
             {
                 var selector = dark ? "[data-theme=\"dark\"]" : ":root, [data-theme=\"light\"]";

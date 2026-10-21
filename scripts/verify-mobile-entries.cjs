@@ -6,7 +6,7 @@ const { chromium } = require(process.env.UI_PLAYWRIGHT_PATH || 'playwright');
 const { fixture } = require('./mobile-entry-fixtures.cjs');
 const origin = process.env.UI_ORIGIN || 'http://127.0.0.1:5237';
 assert(['localhost', '127.0.0.1'].includes(new URL(origin).hostname), 'Loopback fixture only');
-const output = path.resolve(process.env.UI_OUTPUT || 'docs/evidence/mobile-entries');
+const output = path.resolve(process.env.UI_OUTPUT || 'output/verification/mobile-entries');
 const widths = (process.env.UI_WIDTHS || '320,375,390').split(',').map(Number);
 const root = '/app/projects/fixture';
 const routes = [

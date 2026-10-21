@@ -6,7 +6,7 @@ const { chromium } = require(process.env.UI_PLAYWRIGHT_PATH || 'playwright');
 const root = path.resolve(__dirname, '..');
 const base = new URL(process.env.UI_BASE || 'http://127.0.0.1:5184');
 assert(['localhost', '127.0.0.1'].includes(base.hostname), 'This verification only runs against loopback');
-const output = process.env.UI_OUTPUT || path.join(root, 'docs/evidence/project-simplification');
+const output = process.env.UI_OUTPUT || path.join(root, 'output/verification/project-simplification');
 fs.mkdirSync(output, { recursive: true });
 const credentials = JSON.parse(fs.readFileSync(process.env.UI_CREDENTIALS_PATH || path.join(root, '.local-secrets/admin-credentials.json'), 'utf8')).accounts.local;
 

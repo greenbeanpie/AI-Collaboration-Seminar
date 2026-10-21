@@ -258,6 +258,6 @@ const report = {
   comparison,
 };
 
-await mkdir(new URL('../docs/verification/', base), { recursive: true });
-await writeFile(new URL('../docs/verification/architecture-d1-benchmark.json', base), JSON.stringify(report, null, 2) + '\n', 'utf8');
+await mkdir(new URL('../output/verification/', base), { recursive: true });
+await writeFile(new URL('../output/verification/architecture-d1-benchmark.json', base), JSON.stringify(report, null, 2) + '\n', 'utf8');
 console.log(JSON.stringify(report, null, 2));

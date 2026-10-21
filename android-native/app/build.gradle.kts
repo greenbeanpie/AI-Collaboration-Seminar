@@ -76,3 +76,37 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
 baselineProfile { automaticGenerationDuringBuild = false }
+
+
+// README is the only authored manual. Package bounded help sections as generated assets.
+abstract class GenerateHandbookAssets : DefaultTask() {
+    @get:InputFile
+    abstract val handbook: org.gradle.api.file.RegularFileProperty
+    @get:OutputDirectory
+    abstract val destination: org.gradle.api.file.DirectoryProperty
+    @TaskAction
+    fun generate() {
+        val text = handbook.get().asFile.readText(Charsets.UTF_8).replace("\r\n", "\n")
+        mapOf("user" to "USER-GUIDE.md", "technical" to "TECHNICAL-IMPLEMENTATION.md", "database" to "DATABASE-SCHEMA.md").forEach { (key, filename) ->
+            val start = "<!-- help:$key:start -->\n"
+            val end = "<!-- help:$key:end -->"
+            require(text.split(start).size == 2 && text.split(end).size == 2) { "Invalid handbook boundaries: $key" }
+            val from = text.indexOf(start) + start.length
+            val to = text.indexOf(end)
+            require(to > from) { "Reversed handbook boundaries: $key" }
+            val content = text.substring(from, to)
+            require(content.isNotBlank()) { "Empty handbook section: $key" }
+            val target = destination.get().file("native-help/$filename").asFile
+            target.parentFile.mkdirs()
+            target.writeText(content, Charsets.UTF_8)
+        }
+    }
+}
+val generateHandbookAssets = tasks.register<GenerateHandbookAssets>("generateHandbookAssets") {
+    handbook.set(rootProject.layout.projectDirectory.file("../README.md"))
+    destination.set(layout.buildDirectory.dir("generated/handbook-assets"))
+}
+androidComponents.onVariants { variant ->
+    variant.sources.assets?.addGeneratedSourceDirectory(generateHandbookAssets, GenerateHandbookAssets::destination)
+}
+tasks.withType<Test>().configureEach { dependsOn(generateHandbookAssets) }

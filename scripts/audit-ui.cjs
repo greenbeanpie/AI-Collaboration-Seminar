@@ -1,6 +1,6 @@
 const { chromium } = require(process.env.UI_PLAYWRIGHT_PATH || 'playwright');
 const fs = require('node:fs'); const path = require('node:path');
-const root = path.resolve(process.argv[2] || 'docs/evidence/ui-audit');
+const root = path.resolve(process.argv[2] || 'output/verification/ui-audit');
 const stage = process.argv[3] || 'after';
 const origin = process.env.UI_ORIGIN || 'http://127.0.0.1:5197';
 if (!['127.0.0.1', 'localhost'].includes(new URL(origin).hostname)) throw new Error('UI audits require a loopback origin');

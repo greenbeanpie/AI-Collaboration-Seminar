@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import { handbookPlugin } from './plugins/handbook.ts';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
@@ -10,6 +11,7 @@ export default defineConfig(({ command }) => {
   return {
   define: { 'import.meta.env.VITE_BUILD_VERSION': JSON.stringify(version) },
   plugins: [
+    handbookPlugin(),
     react(),
     VitePWA({
       registerType: 'prompt',

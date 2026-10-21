@@ -7,7 +7,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** Native tokens from docs/ui-prototypes/buwei-dual-platform-prototype.html.
+/** Native tokens from windows-native/Tests/Fixtures/prototype-theme.css.
  * Mobile .phone-screen/.m-card use a cool page, opaque cards and 15 px corners.
  * No bitmap, blur layer, downloaded font, WebView or per-frame work is required.
  */

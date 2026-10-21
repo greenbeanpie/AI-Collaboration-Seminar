@@ -47,9 +47,7 @@ deploy/vps/.env
 # Private generated login credentials and bootstrap SQL
 .local-secrets/
 
-# Full local visual-audit matrix; curated evidence is explicitly committed.
-docs/evidence/ui-audit/
-docs/*/*.jpg
+# Generated evidence is kept outside the tracked source tree.
 output/*
 *-preview.png
 
@@ -64,3 +62,7 @@ output/*
 !/desktop/src-tauri/gen/
 /desktop/src-tauri/gen/*
 !/desktop/src-tauri/gen/android/
+
+# Local editor revision and design-frame caches
+.file-versions/
+.od-frames/

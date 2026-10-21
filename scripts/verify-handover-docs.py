@@ -9,9 +9,15 @@ import re
 import sqlite3
 
 ROOT = Path(__file__).resolve().parents[1]
-HELP = ROOT / 'frontend/src/help'
-manual = (HELP / 'TECHNICAL-IMPLEMENTATION.md').read_text(encoding='utf-8-sig')
-dictionary = (HELP / 'DATABASE-SCHEMA.md').read_text(encoding='utf-8-sig')
+handbook = (ROOT / 'README.md').read_text(encoding='utf-8-sig').replace('\r\n', '\n')
+def help_section(key):
+    start, end = f'<!-- help:{key}:start -->\n', f'<!-- help:{key}:end -->'
+    assert handbook.count(start) == handbook.count(end) == 1, f'Invalid help boundaries: {key}'
+    content = handbook.split(start, 1)[1].split(end, 1)[0]
+    assert content.strip(), f'Empty help section: {key}'
+    return content
+manual = help_section('technical')
+dictionary = help_section('database')
 missing_paths = []
 paths = set(re.findall(r'`((?:backend|frontend|shared|scripts|deploy)/[^`\s]+)`', manual + dictionary))
 for reference in paths:
@@ -95,7 +101,7 @@ for value in [manual, dictionary]:
     assert len(re.findall(r'^```', value, re.M)) % 2 == 0, 'Unclosed code fence'
 
 report = {'scope': 'read-only source and in-memory SQLite checks', 'sourcePathsChecked': len(paths), 'tableCount': len(tables), 'columnCount': sum(item['columns'] for item in comparison), 'ddlAndMetadataMatch': True, 'integrityCheck': 'ok', 'foreignKeyCheck': [], 'migrations': migrations, 'tables': comparison, 'aiChainSymbolsChecked': sum(map(len, symbols.values())), 'readOnlySqlExamplesChecked': sql_examples}
-output = ROOT / 'docs/evidence/help/handover'
+output = ROOT / 'output/verification/help/handover'
 output.mkdir(parents=True, exist_ok=True)
 (output / 'document-verification.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 print(json.dumps({key: value for key, value in report.items() if key not in {'tables', 'migrations'}}, ensure_ascii=False))

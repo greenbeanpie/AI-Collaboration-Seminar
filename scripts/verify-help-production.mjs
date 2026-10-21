@@ -32,5 +32,5 @@ const health = await fetch(origin + '/api/v1/health', { signal: AbortSignal.time
 assert.equal(health.status, 200);
 results.push({ path: '/api/v1/health', status: health.status });
 const report = { verifiedAt: new Date().toISOString(), origin, versionId: process.argv[2] ?? null, results, boundary: 'Static release bytes and anonymous service checks; authenticated production reading requires a valid existing session. Local browser fixtures verify member routing and document interactions. No production write or model invocation.' };
-await writeFile(process.env.HELP_VERIFICATION_OUTPUT ?? new URL('../docs/evidence/help/production-verification.json', import.meta.url), JSON.stringify(report, null, 2));
+await writeFile(process.env.HELP_VERIFICATION_OUTPUT ?? new URL('../output/verification/help/production-verification.json', import.meta.url), JSON.stringify(report, null, 2));
 console.log(JSON.stringify(report, null, 2));

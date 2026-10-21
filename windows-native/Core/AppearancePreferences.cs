@@ -47,7 +47,7 @@ public sealed class AppearancePreferencesStore(string directory)
 public sealed record AppearancePalette(string Page, string Surface, string Navigation, string Card, string Stroke,
     string Text, string SecondaryText, string Accent, string AccentHover, string AccentText, string AccentSoft, string Hover, string Ai, string AiSoft)
 {
-    // Opaque surface equivalents of docs/ui-prototypes/buwei-dual-platform-prototype.html.
+    // Opaque surface equivalents of windows-native/Tests/Fixtures/prototype-theme.css.
     // Dark filled buttons retain the readable blue/white pair; links use the lighter blue.
     public static AppearancePalette Resolve(AppearanceDesign design, bool dark) => (design, dark) switch
     {

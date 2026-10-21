@@ -6,9 +6,12 @@ const { chromium } = require(process.env.UI_PLAYWRIGHT_PATH || 'playwright');
 const { fixture } = require('./audit-ui.cjs');
 const origin = process.env.UI_ORIGIN || 'http://127.0.0.1:5237';
 if (!['127.0.0.1', 'localhost'].includes(new URL(origin).hostname)) throw new Error('Only loopback fixture servers are allowed');
-const output = path.resolve(process.env.UI_OUTPUT || 'docs/evidence/help');
-const technicalChapters = (fs.readFileSync('frontend/src/help/TECHNICAL-IMPLEMENTATION.md', 'utf8').match(/^## /gm) || []).length;
-const databaseChapters = (fs.readFileSync('frontend/src/help/DATABASE-SCHEMA.md', 'utf8').match(/^## /gm) || []).length;
+const output = path.resolve(process.env.UI_OUTPUT || 'output/verification/help');
+const { handbookSection, helpFiles } = require('../shared/handbook.mjs');
+const handbook = fs.readFileSync('README.md', 'utf8');
+const helpContent = Object.fromEntries(Object.entries(helpFiles).map(([key, filename]) => [filename, handbookSection(handbook, key)]));
+const technicalChapters = (helpContent['TECHNICAL-IMPLEMENTATION.md'].match(/^## /gm) || []).length;
+const databaseChapters = (helpContent['DATABASE-SCHEMA.md'].match(/^## /gm) || []).length;
 
 (async () => {
   fs.mkdirSync(output, { recursive: true });
@@ -54,7 +57,7 @@ const databaseChapters = (fs.readFileSync('frontend/src/help/DATABASE-SCHEMA.md'
         assert.equal(download.suggestedFilename(), filename);
         const stream = await download.createReadStream(); const chunks = [];
         for await (const chunk of stream) chunks.push(chunk);
-        assert.equal(Buffer.concat(chunks).toString('utf8'), fs.readFileSync(path.join('frontend/src/help', filename), 'utf8'));
+        assert.equal(Buffer.concat(chunks).toString('utf8'), helpContent[filename]);
         if (label === '技术实现') {
           assert.equal(await page.locator('.help-section').count(), technicalChapters);
           assert(await page.locator('pre code').count() >= 5, 'technical handover must render code examples');

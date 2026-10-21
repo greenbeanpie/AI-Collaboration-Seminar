@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
  *   3) 导入独立的本地演练库并用查询验证数据确实恢复；
  *   4) 清理临时文件。
  *
- * 不做 --remote 导出，不接触任何云端资源。云端恢复步骤见 backend/docs/DEPLOY.md 第 9 节。
+ * 不做 --remote 导出，不接触任何云端资源。云端恢复步骤见 README.md 第 9 节。
  */
 const backendDir = fileURLToPath(new URL('../backend', import.meta.url));
 // 直接用 node 执行 wrangler 的 CLI：Windows 下 execFileSync 无法直接 spawn .cmd

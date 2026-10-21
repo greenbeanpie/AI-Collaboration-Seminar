@@ -1,6 +1,6 @@
 const {chromium}=require(process.env.UI_PLAYWRIGHT_PATH||'playwright');
 const {fixture,origin}=require('./audit-ui.cjs'); const fs=require('node:fs');const path=require('node:path');
-const root=path.resolve(process.argv[2]||'docs/evidence/ui-audit');const results=[];
+const root=path.resolve(process.argv[2]||'output/verification/ui-audit');const results=[];
 (async()=>{const browser=await chromium.launch();
 for(const width of [1440,390,320]) for(const theme of ['light','dark']) {
  const context=await browser.newContext({viewport:{width,height:900},colorScheme:theme,serviceWorkers:'block'});const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));

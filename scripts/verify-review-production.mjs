@@ -59,5 +59,5 @@ if(custom.status===200&&customBody.includes('id="root"')){headers(custom);assert
  }
  report.customDomain.verified=true;checked('Custom domain matches deployed application');}
 report.limitations=['No browser/visual verification','No real human Turnstile success or replay verification','No paid provider calls or production business-data mutations'];
-const output='docs/evidence/repository-review-release-20261007.json';mkdirSync('docs/evidence',{recursive:true});writeFileSync(output,JSON.stringify(report,null,2)+'\n');
+const output='output/verification/repository-review-release-20261007.json';mkdirSync('output/verification',{recursive:true});writeFileSync(output,JSON.stringify(report,null,2)+'\n');
 console.log(JSON.stringify({passed:report.checks.length,customDomain:report.customDomain,output}));

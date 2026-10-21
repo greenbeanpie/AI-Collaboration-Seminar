@@ -10,7 +10,7 @@ import { fixture } from './mobile-entry-fixtures.cjs';
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.resolve(process.env.UI_ANDROID_DIST || path.join(repo, 'frontend/dist'));
 const phase = process.env.UI_ANDROID_PHASE || 'after';
-const output = path.resolve(process.env.UI_ANDROID_OUTPUT || path.join(repo, 'docs/evidence/mobile-layout', phase));
+const output = path.resolve(process.env.UI_ANDROID_OUTPUT || path.join(repo, 'output/verification/mobile-layout', phase));
 const adb = process.env.BUWEI_ADB_PATH || 'D:/Android/Sdk/platform-tools/adb.exe';
 const serial = process.env.BUWEI_ADB_SERIAL || '127.0.0.1:5555';
 const appId = 'cn.buwei.mobile';
