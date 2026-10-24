@@ -32,15 +32,20 @@ class AppearancePreferences internal constructor(private val store:DataStore<Pre
     suspend fun setDesign(design:String) {require(design in nativeThemeDesigns);store.edit {it[designKey]=design}}
 }
 
-@Composable fun NativeTheme(dark:Boolean=false,design:String="classic",content:@Composable ()->Unit) {
-    val palette=if(design=="prototype") prototypeColorScheme(dark) else if(dark) darkColorScheme(
+internal fun classicColorScheme(dark:Boolean):ColorScheme=if(dark) darkColorScheme(
         primary=Color(0xFF9DD2B9),secondary=Color(0xFFB7CCBF),primaryContainer=Color(0xFF204E3B),secondaryContainer=Color(0xFF384D42),
+        onPrimary=Color(0xFF003824),onPrimaryContainer=Color(0xFFB9E4CE),onSecondary=Color(0xFF22352A),onSecondaryContainer=Color(0xFFD5E9DC),
+        onBackground=Color(0xFFE0E4DE),onSurface=Color(0xFFE0E4DE),onSurfaceVariant=Color(0xFFC1CBC2),inversePrimary=Color(0xFF356B56),
         background=Color(0xFF111512),surface=Color(0xFF111512),surfaceVariant=Color(0xFF414942),surfaceTint=Color(0xFF9DD2B9),
         surfaceContainerLowest=Color(0xFF0C100D),surfaceContainerLow=Color(0xFF191E1A),surfaceContainer=Color(0xFF1D231F),surfaceContainerHigh=Color(0xFF272D28),surfaceContainerHighest=Color(0xFF323833),outline=Color(0xFF8B958D),outlineVariant=Color(0xFF414942)
     ) else lightColorScheme(
         primary=Color(0xFF356B56),secondary=Color(0xFF52685C),primaryContainer=Color(0xFFB9E4CE),secondaryContainer=Color(0xFFD5E9DC),
+        onPrimary=Color.White,onPrimaryContainer=Color(0xFF002116),onSecondary=Color.White,onSecondaryContainer=Color(0xFF102018),
+        onBackground=Color(0xFF191D19),onSurface=Color(0xFF191D19),onSurfaceVariant=Color(0xFF414942),inversePrimary=Color(0xFF9DD2B9),
         background=Color(0xFFF8FAF6),surface=Color(0xFFF8FAF6),surfaceVariant=Color(0xFFDFE6DF),surfaceTint=Color(0xFF356B56),
         surfaceContainerLowest=Color.White,surfaceContainerLow=Color(0xFFF0F5EF),surfaceContainer=Color(0xFFEAF0E9),surfaceContainerHigh=Color(0xFFE4EAE3),surfaceContainerHighest=Color(0xFFDDE4DC),outline=Color(0xFF717B73),outlineVariant=Color(0xFFC1CBC2)
     )
+@Composable fun NativeTheme(dark:Boolean=false,design:String="classic",content:@Composable ()->Unit) {
+    val palette=if(design=="prototype") prototypeColorScheme(dark) else classicColorScheme(dark)
     MaterialTheme(colorScheme=palette,shapes=if(design=="prototype") prototypeShapes else Shapes(),typography=if(design=="prototype") prototypeTypography else Typography(),content=content)
 }

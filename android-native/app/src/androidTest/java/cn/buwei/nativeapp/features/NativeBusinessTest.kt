@@ -99,7 +99,11 @@ class NativeBusinessTest {
     if(method=="DELETE"){sent=false;jobDone=false;return envelope(buildJsonObject{put("cleared",true)})}
     val hasQuestion=sent;val completed=jobDone
     val response=envelope(buildJsonObject{put("items",buildJsonArray{if(hasQuestion){add(buildJsonObject{put("id","q1");put("questionId",task);put("role","user");put("content","Explain fixture");put("createdAt","2026-10-19T00:00:00Z");put("jobId",draftId)});if(completed)add(buildJsonObject{put("id","a1");put("questionId",task);put("role","assistant");put("content","## Fixture answer\nNative response");put("createdAt","2026-10-19T00:00:01Z");put("jobId",draftId)})}});put("nextCursor",JsonNull);put("pendingJobId",if(hasQuestion&&!completed)JsonPrimitive(draftId)else JsonNull)})
-    if(hasQuestion&&completed)answerServed.set(true)
+    if(hasQuestion&&completed){
+     answerServed.set(true)
+     // Dispatch precedes body delivery and Compose state application. Exercise that gap.
+     response.setBodyDelay(250,java.util.concurrent.TimeUnit.MILLISECONDS)
+    }
     return response
    }
    if(route=="/api/v1/jobs/$draftId"){val allowCompletion=jobCompletionAllowed.get();jobReads.incrementAndGet();if(allowCompletion)jobDone=true;return envelope(buildJsonObject{put("jobId",draftId);put("status",if(jobDone)"succeeded"else"running");put("activity",buildJsonObject{put("code","executing_tool");put("progress",buildJsonObject{put("completed",3);put("unit","tool_call")})});put("execution",buildJsonObject{put("totalCalls",1);put("state","completed");put("generation",1)})})}
@@ -161,8 +165,7 @@ class NativeBusinessTest {
   awaitText("项目已创建");screenshot("creation-committed");compose.onNodeWithText("进入项目").performScrollTo().performClick();compose.waitUntil{selected.get()==project}
  }
  @Test fun conversationSendsPollsAndDisplaysNativeAnswer(){
-  // Lazy message cards only poll their job while composed. Keep the first job response
-  // running so that one deliberate scroll can reveal it before the terminal answer arrives.
+  // Keep the first job response running so execution can be observed before completion.
   jobCompletionAllowed.set(false)
   compose.setContent{cn.buwei.nativeapp.NativeTheme{Surface(Modifier.fillMaxSize()){AiConversationScreen(repository,project)}}}
   compose.onNodeWithText("询问项目 AI").performTextInput("Explain fixture");closeSoftKeyboard();compose.onNodeWithText("发送").performScrollTo().performClick()
@@ -170,10 +173,12 @@ class NativeBusinessTest {
   compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("AI 执行",substring=true))
   compose.waitUntil(15000){jobReads.get()>0}
   jobCompletionAllowed.set(true)
-  // Observe actual fixture responses without repeatedly scrolling a changing lazy list.
-  // A second job GET and an answer-bearing history response prove completion was polled.
+  // Server dispatch proves polling, but not response delivery or a rendered lazy item.
   compose.waitUntil(15000){jobReads.get()>=2&&answerServed.get()}
-  compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Fixture answer"))
+  compose.waitUntil(15000){try{
+   compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Fixture answer"))
+   compose.onAllNodesWithText("Fixture answer").fetchSemanticsNodes().isNotEmpty()
+  }catch(_:AssertionError){false}}
   compose.onNodeWithText("Fixture answer").assertIsDisplayed()
   compose.onNodeWithText("Native response").performScrollTo().assertIsDisplayed();screenshot("ai-conversation")
   assertEquals(1,observedRequests.count{it=="POST /api/v1/projects/$project/ai-chat"})

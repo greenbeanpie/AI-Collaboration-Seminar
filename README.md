@@ -10,8 +10,41 @@
 - [数据库字典](#help-database)
 - [部署与恢复](#ops-backend-docs-deploy-md)
 - [Android 原生客户端](#ops-android-native-readme-md)
+- [Android 单设备回归与弃用边界](#android-validation-20261024)
 - [Windows 原生客户端](#ops-windows-native-readme-md)
 - [DSH Bridge](#ops-packages-dsh-team-office-bridge-readme-md)
+
+<a id="android-validation-20261024"></a>
+## Android 单设备回归与弃用边界（2026-10-24）
+
+先构建、等待 Gradle 退出，再启动一台模拟器进行测试；不要并行启动第二台模拟器或在仪器测试期间构建。低内存机器可按以下方式限制构建资源：
+
+```powershell
+$env:JAVA_HOME = 'C:/Program Files/Android/Android Studio/jbr'
+$env:ANDROID_HOME = 'D:/Android/Sdk'
+./android-native/gradlew.bat -p android-native :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug --no-daemon --max-workers=1 --warning-mode all '-Dorg.gradle.jvmargs=-Xmx1536m -Dfile.encoding=UTF-8'
+# 构建结束后，启动或复用唯一一台模拟器：
+./android-native/scripts/test-device.ps1
+# 只复验某个测试类时：
+./android-native/scripts/test-device.ps1 -TestClass cn.buwei.nativeapp.PrototypeThemeInstrumentedTest
+```
+
+`test-device.ps1` 只安装预览 Debug APK 并串行运行仪器测试，不启动模拟器或 Gradle，不清空应用数据。发现多台模拟器（包含 offline）时直接拒绝，即使指定了 `-Serial`；无唯一可用设备时也拒绝。它保存原始仪器测试结果到被 Git 忽略的 `output/verification/android-device/instrumentation.txt`，并检查 AndroidJUnitRunner 的完成结果，不把 ADB 退出码 0 当作测试通过。`-ValidateOnly` 可离线验证设备选择保护逻辑。
+
+本轮修复经典绿主题遗漏前景色而出现默认紫色文字的问题，并为浅深色的文字/容器组合增加最低 4.5:1 对比度回归。依赖版本固定为 Gradle 9.8.2（校验官方 SHA-256）、DataStore 1.3.0、kotlinx.serialization 1.12.0、OkHttp/MockWebServer 5.5.1、Firebase Messaging 26.0.1，以消除相应旧版本提醒。版本依据：[Gradle](https://docs.gradle.org/9.8.2/release-notes.html)、[DataStore](https://developer.android.com/jetpack/androidx/releases/datastore)、[serialization](https://github.com/Kotlin/kotlinx.serialization/releases/tag/v1.12.0)、[Firebase](https://firebase.google.com/support/release-notes/android)。
+
+AI 对话仪器测试增加响应正文延迟，并等待答案真正进入 Compose 界面；模拟服务器设置“已派发”标志只证明请求已处理，不能作为界面刷新完成的条件。最终仍断言答案正文可见、原生响应可达，且只发送一次问题。
+
+本轮 Android 验证：166 项 JVM 单元测试通过，修复等待竞态后重新全量运行的 169 项手机仪器测试通过，同一模拟器切换为 1600×2560 / 240 dpi 后的 14 项外观、引用设置、帮助和项目概览测试通过。手机及平板尺寸的实际启动检查通过，浅深色主题和大字体截图已抽查。Debug 和 Release/R8 构建通过；lint 为 0 错误、1 项既有 EST 依赖告警，Release `-checkdiscard` 通过且映射不含 EST 类。中途失败的全量结果及后续通过结果均保留在 `output/verification`，不能把先前失败轮次计为通过。平板尺寸测试使用同一 AVD，不代表独立平板硬件验收；全程最多一台模拟器在线。
+
+以下上游警告仍须明确保留，不能称为“弃用警告已全部解决”：
+
+| 来源 | 已验证的原因 | 后续处理与通过条件 |
+| --- | --- | --- |
+| AGP 9.4.1 / `Configuration.setVisible(boolean)` | `--warning-mode all -Dorg.gradle.deprecation.trace=true` 定位到 AGP `BasePlugin.createAndroidJdkImageConfiguration`，不是项目 SourceSet 或 baseline profile 配置。Google Maven 当前没有更新的稳定 AGP；9.5 尚为 RC。 | 待稳定 AGP 移除此内部调用后升级，再以同样的完整构建和仪器测试验收；最后用 `--warning-mode fail` 确认无 Gradle 弃用。不要降级 Gradle、关闭警告或修改缓存 JAR 来伪装修复。 |
+| DataStore 内嵌 protobuf / `sun.misc.Unsafe.arrayBaseOffset` | Android Studio JBR 25.0.3 运行本地 JVM 单元测试时触发；1.2.1 和最新稳定 1.3.0 均复现。升级 DataStore 本身没有解决它。 | 需要 AndroidX 更新其 shaded protobuf 的 JVM 内存访问实现；普通 `com.google.protobuf` 版本覆盖不到此私有命名空间。上游修复后用 JDK 25+ 重跑 DataStore 恢复、账户隔离及全部单元测试，确认日志无 Unsafe 弃用；继续保留 Android ART 上的仪器回归。不要设置 Unsafe `allow` 或过滤日志。 |
+
+真实登录、生产写入、付费模型、真实麦克风/摄像头和长时间设备稳定性不属于本轮本地 fixture 验收。
 
 <a id="operations"></a>
 ## 本地开发与验证
@@ -7479,7 +7512,7 @@ FCM 公共客户端参数通过 Gradle 属性 `firebaseAppId`、`firebaseApiKey`
 
 专用原生页面已接入现有后端接口，配套服务已部署；真实生产授权、FCM 投递、付费模型、实时语音、四小时物理设备录制与可比 Release 业务负载仍需独立验收。手机、平板、厂商后台限制、外设切换、无障碍及长文性能也应按 [验收清单](#operations) 记录实际结果，不能用接口数量或模拟数据代替。
 
-PDFBox 的可选旧 JPEG2000 解码器未打包，图片渲染使用系统 PdfRenderer。BouncyCastle 中未使用的 EST 辅助类会触发依赖 Lint 告警；Release 配置使用 `-checkdiscard` 要求移除整个 EST 包，未放宽应用 TLS 校验。Baseline Profile 插件仍有 Gradle 弃用提示。
+PDFBox 的可选旧 JPEG2000 解码器未打包，图片渲染使用系统 PdfRenderer。BouncyCastle 中未使用的 EST 辅助类会触发依赖 Lint 告警；Release 配置使用 `-checkdiscard` 要求移除整个 EST 包，未放宽应用 TLS 校验。Gradle 弃用堆栈实际定位到 AGP 的 `BasePlugin.createAndroidJdkImageConfiguration`；不能归因于 Baseline Profile 插件。
 
 媒体使用 ExoPlayer 解码、系统 SurfaceView 和 Compose 控制，没有引入 `media3-ui` 的备用 WebView 字幕组件。最终 APK 的 DEX 扫描结果以对应构建的验证报告为准；当前未提供内嵌字幕专用绘制。
 
