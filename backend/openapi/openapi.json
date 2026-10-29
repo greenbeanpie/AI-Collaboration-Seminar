@@ -12912,6 +12912,20 @@
           "data": {
             "type": "object",
             "properties": {
+              "parentTaskId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "manualDependsOnTaskIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
               "startedAt": {
                 "type": [
                   "string",
@@ -13043,6 +13057,8 @@
               }
             },
             "required": [
+              "parentTaskId",
+              "manualDependsOnTaskIds",
               "taskId",
               "lifecycleState",
               "criteria",
@@ -13084,6 +13100,20 @@
                 "items": {
                   "type": "object",
                   "properties": {
+                    "parentTaskId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "manualDependsOnTaskIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    },
                     "startedAt": {
                       "type": [
                         "string",
@@ -13215,6 +13245,8 @@
                     }
                   },
                   "required": [
+                    "parentTaskId",
+                    "manualDependsOnTaskIds",
                     "taskId",
                     "lifecycleState",
                     "criteria",
@@ -13269,6 +13301,20 @@
                 "items": {
                   "type": "object",
                   "properties": {
+                    "parentTaskId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "manualDependsOnTaskIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    },
                     "taskId": {
                       "type": "string",
                       "format": "uuid"
@@ -13360,6 +13406,8 @@
                     }
                   },
                   "required": [
+                    "parentTaskId",
+                    "manualDependsOnTaskIds",
                     "taskId",
                     "title",
                     "detail",
@@ -13449,6 +13497,647 @@
               "graphRevision",
               "canRegenerate",
               "memberIds"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "TaskFocusResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "parentTaskId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "manualDependsOnTaskIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    },
+                    "startedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "archivedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "pendingHumanReview": {
+                      "type": "boolean"
+                    },
+                    "taskId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "lifecycleState": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "criteria": {
+                      "type": "string"
+                    },
+                    "effortHours": {
+                      "type": "number"
+                    },
+                    "currentSubmissionId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "citations": {
+                      "type": "array",
+                      "items": {}
+                    },
+                    "dependsOnTaskIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    },
+                    "unfinishedDependencyIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "assigneeId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "dueDate": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "duePrecision": {
+                      "type": "string",
+                      "enum": [
+                        "date",
+                        "datetime",
+                        "unknown"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "todo",
+                        "doing",
+                        "blocked",
+                        "done"
+                      ]
+                    },
+                    "requirementId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "revision": {
+                      "type": "integer"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "summary": {
+                      "type": "string"
+                    },
+                    "summaryStatus": {
+                      "type": "string",
+                      "enum": [
+                        "ready",
+                        "missing",
+                        "queued",
+                        "running",
+                        "failed",
+                        "disabled"
+                      ]
+                    },
+                    "summaryJobId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "summarySourceHash": {
+                      "type": "string"
+                    },
+                    "pinned": {
+                      "type": "boolean"
+                    },
+                    "focusReasons": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "parentTaskId",
+                    "manualDependsOnTaskIds",
+                    "taskId",
+                    "lifecycleState",
+                    "criteria",
+                    "effortHours",
+                    "currentSubmissionId",
+                    "citations",
+                    "dependsOnTaskIds",
+                    "unfinishedDependencyIds",
+                    "title",
+                    "detail",
+                    "assigneeId",
+                    "dueDate",
+                    "duePrecision",
+                    "status",
+                    "requirementId",
+                    "revision",
+                    "createdAt",
+                    "updatedAt",
+                    "pinned",
+                    "focusReasons"
+                  ]
+                }
+              },
+              "waitingReview": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "parentTaskId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "manualDependsOnTaskIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    },
+                    "startedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "archivedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "pendingHumanReview": {
+                      "type": "boolean"
+                    },
+                    "taskId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "lifecycleState": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "criteria": {
+                      "type": "string"
+                    },
+                    "effortHours": {
+                      "type": "number"
+                    },
+                    "currentSubmissionId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "citations": {
+                      "type": "array",
+                      "items": {}
+                    },
+                    "dependsOnTaskIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    },
+                    "unfinishedDependencyIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "assigneeId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "dueDate": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "duePrecision": {
+                      "type": "string",
+                      "enum": [
+                        "date",
+                        "datetime",
+                        "unknown"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "todo",
+                        "doing",
+                        "blocked",
+                        "done"
+                      ]
+                    },
+                    "requirementId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "revision": {
+                      "type": "integer"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "summary": {
+                      "type": "string"
+                    },
+                    "summaryStatus": {
+                      "type": "string",
+                      "enum": [
+                        "ready",
+                        "missing",
+                        "queued",
+                        "running",
+                        "failed",
+                        "disabled"
+                      ]
+                    },
+                    "summaryJobId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "summarySourceHash": {
+                      "type": "string"
+                    },
+                    "pinned": {
+                      "type": "boolean"
+                    },
+                    "focusReasons": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "parentTaskId",
+                    "manualDependsOnTaskIds",
+                    "taskId",
+                    "lifecycleState",
+                    "criteria",
+                    "effortHours",
+                    "currentSubmissionId",
+                    "citations",
+                    "dependsOnTaskIds",
+                    "unfinishedDependencyIds",
+                    "title",
+                    "detail",
+                    "assigneeId",
+                    "dueDate",
+                    "duePrecision",
+                    "status",
+                    "requirementId",
+                    "revision",
+                    "createdAt",
+                    "updatedAt",
+                    "pinned",
+                    "focusReasons"
+                  ]
+                }
+              },
+              "reviewRequired": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "parentTaskId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "manualDependsOnTaskIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    },
+                    "startedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "archivedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "pendingHumanReview": {
+                      "type": "boolean"
+                    },
+                    "taskId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "lifecycleState": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "criteria": {
+                      "type": "string"
+                    },
+                    "effortHours": {
+                      "type": "number"
+                    },
+                    "currentSubmissionId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "citations": {
+                      "type": "array",
+                      "items": {}
+                    },
+                    "dependsOnTaskIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    },
+                    "unfinishedDependencyIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "assigneeId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "dueDate": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "duePrecision": {
+                      "type": "string",
+                      "enum": [
+                        "date",
+                        "datetime",
+                        "unknown"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "todo",
+                        "doing",
+                        "blocked",
+                        "done"
+                      ]
+                    },
+                    "requirementId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "revision": {
+                      "type": "integer"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "summary": {
+                      "type": "string"
+                    },
+                    "summaryStatus": {
+                      "type": "string",
+                      "enum": [
+                        "ready",
+                        "missing",
+                        "queued",
+                        "running",
+                        "failed",
+                        "disabled"
+                      ]
+                    },
+                    "summaryJobId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "summarySourceHash": {
+                      "type": "string"
+                    },
+                    "pinned": {
+                      "type": "boolean"
+                    },
+                    "focusReasons": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "parentTaskId",
+                    "manualDependsOnTaskIds",
+                    "taskId",
+                    "lifecycleState",
+                    "criteria",
+                    "effortHours",
+                    "currentSubmissionId",
+                    "citations",
+                    "dependsOnTaskIds",
+                    "unfinishedDependencyIds",
+                    "title",
+                    "detail",
+                    "assigneeId",
+                    "dueDate",
+                    "duePrecision",
+                    "status",
+                    "requirementId",
+                    "revision",
+                    "createdAt",
+                    "updatedAt",
+                    "pinned",
+                    "focusReasons"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "items",
+              "waitingReview",
+              "reviewRequired"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "TaskParentResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "taskId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "parentTaskId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "graphRevision": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "taskId",
+              "parentTaskId",
+              "graphRevision"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "请求关联 ID，与响应头 X-Request-Id 一致"
+          }
+        },
+        "required": [
+          "data",
+          "requestId"
+        ]
+      },
+      "TaskPinResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "taskId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "pinned": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "taskId",
+              "pinned"
             ]
           },
           "requestId": {
@@ -14088,6 +14777,20 @@
                 "items": {
                   "type": "object",
                   "properties": {
+                    "parentTaskId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "manualDependsOnTaskIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    },
                     "pendingHumanReview": {
                       "type": "boolean"
                     },
@@ -14252,6 +14955,8 @@
                     }
                   },
                   "required": [
+                    "parentTaskId",
+                    "manualDependsOnTaskIds",
                     "taskId",
                     "title",
                     "detail",
@@ -14931,6 +15636,12 @@
                                 "maximum": 200,
                                 "default": 1
                               },
+                              "parent": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
                               "key": {
                                 "type": "string"
                               },
@@ -15007,6 +15718,13 @@
                                 "minimum": 0.25,
                                 "maximum": 200,
                                 "default": 1
+                              },
+                              "parentTaskId": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "format": "uuid"
                               },
                               "taskId": {
                                 "type": "string",
@@ -15378,6 +16096,20 @@
           "data": {
             "type": "object",
             "properties": {
+              "parentTaskId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "manualDependsOnTaskIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
               "pendingHumanReview": {
                 "type": "boolean"
               },
@@ -15542,6 +16274,8 @@
               }
             },
             "required": [
+              "parentTaskId",
+              "manualDependsOnTaskIds",
               "taskId",
               "title",
               "detail",
@@ -16222,6 +16956,12 @@
                           "maximum": 200,
                           "default": 1
                         },
+                        "parent": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "key": {
                           "type": "string"
                         },
@@ -16298,6 +17038,13 @@
                           "minimum": 0.25,
                           "maximum": 200,
                           "default": 1
+                        },
+                        "parentTaskId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
                         },
                         "taskId": {
                           "type": "string",
@@ -24112,6 +24859,18 @@
                 "items": {
                   "type": "object",
                   "properties": {
+                    "parentTaskId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "manualDependsOnTaskIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
                     "taskId": {
                       "type": "string"
                     },
@@ -24208,6 +24967,8 @@
                     }
                   },
                   "required": [
+                    "parentTaskId",
+                    "manualDependsOnTaskIds",
                     "taskId",
                     "title",
                     "detail",
@@ -34929,6 +35690,13 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "parentTaskId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "uuid"
+                  },
                   "title": {
                     "type": "string",
                     "minLength": 1,
@@ -35153,6 +35921,167 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TaskGraphResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/tasks/focus": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "个人重点任务",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskFocusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/tasks/{taskId}/parent": {
+      "put": {
+        "tags": [
+          "tasks"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "taskId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "parentTaskId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "uuid"
+                  },
+                  "expectedGraphRevision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "parentTaskId",
+                  "expectedGraphRevision"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "父任务已更新",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskParentResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/tasks/{taskId}/pin": {
+      "put": {
+        "tags": [
+          "tasks"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "项目 ID"
+            },
+            "required": true,
+            "description": "项目 ID",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "taskId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "pinned": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "pinned"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "个人置顶已更新",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskPinResponse"
                 }
               }
             }
@@ -37522,6 +38451,12 @@
                               "maximum": 200,
                               "default": 1
                             },
+                            "parent": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
                             "key": {
                               "type": "string"
                             },
@@ -37598,6 +38533,13 @@
                               "minimum": 0.25,
                               "maximum": 200,
                               "default": 1
+                            },
+                            "parentTaskId": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "format": "uuid"
                             },
                             "taskId": {
                               "type": "string",

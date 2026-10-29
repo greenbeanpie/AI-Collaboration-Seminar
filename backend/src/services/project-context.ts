@@ -183,7 +183,7 @@ export async function executeDiscoveryTool(env: Env, projectId: string, name: st
   }
   if(name==='list_tasks' || name==='read_task') {
     if(name==='read_task'&&!a.id) throw invalidState('缺少任务 id');
-    const rows=await env.DB.prepare(`SELECT t.id,t.title,t.detail,t.criteria,t.assignee_id,t.due_date,t.status,t.lifecycle_state,t.revision,t.effort_hours,t.current_submission_id,
+    const rows=await env.DB.prepare(`SELECT t.id,t.parent_task_id,t.title,t.detail,t.criteria,t.assignee_id,t.due_date,t.status,t.lifecycle_state,t.revision,t.effort_hours,t.current_submission_id,
       (SELECT json_group_array(depends_on_task_id) FROM task_dependencies d WHERE d.task_id=t.id AND d.project_id=t.project_id) dependencies
       FROM tasks t WHERE t.project_id=?1 AND t.archived_at IS NULL AND (?2 IS NULL OR t.id=?2) AND (?3='' OR instr(lower(t.title||t.detail),lower(?3))>0) ORDER BY t.id LIMIT 21 OFFSET ?4`).bind(projectId,name==='read_task'?a.id:null,a.query??'',a.offset).all();
     if(name==='read_task'&&!rows.results.length&&a.offset===0) throw notFound('任务不存在或不属于本项目');

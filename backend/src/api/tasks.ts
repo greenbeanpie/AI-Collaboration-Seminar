@@ -1,7 +1,8 @@
+import { changeTaskParent, focusTasks } from '../services/task-hierarchy';
 import { pristineTasksSql } from '../services/task-planning-policy';
 import { readTaskPage } from '../services/collaboration-read-models';
 import { readinessStatements } from '../services/task-readiness';
-import { projectPermissionSql, requireProjectPermission } from '../services/project-permissions';
+import { projectPermissionSql, projectAccess, requireProjectPermission } from '../services/project-permissions';
 import { taskSummarySchema } from '../services/task-summary';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../env';
@@ -21,6 +22,7 @@ const taskParams = projectParams.extend({ taskId: z.string().uuid() });
 const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 const taskSchema = z.object({
+  parentTaskId: z.string().uuid().nullable(), manualDependsOnTaskIds:z.array(z.string().uuid()),
   startedAt: z.string().nullable().optional(), archivedAt: z.string().nullable().optional(),
   pendingHumanReview: z.boolean().optional(),
   taskId: z.string().uuid(),
@@ -54,6 +56,7 @@ const commentListResponse = apiEnvelope(z.object({ items: z.array(commentSchema)
 const commentResponse = apiEnvelope(commentSchema, 'CommentResponse');
 
 const createBody = z.object({
+  parentTaskId:z.string().uuid().nullable().optional(),
   title: z.string().min(1).max(200),
   detail: z.string().max(4000).default(''),
   assigneeId: z.string().uuid().nullable().default(null),
@@ -166,6 +169,7 @@ const commentListRoute = createRoute({
 });
 
 interface TaskRow {
+  parent_task_id?: string | null;
   started_at?: string | null; archived_at?: string | null;
   id: string;
   lifecycle_state: string | null;
@@ -186,7 +190,7 @@ interface TaskRow {
 function toTask(r: TaskRow) {
   return {
     startedAt: r.started_at ?? null, archivedAt: r.archived_at ?? null,
-    taskId: r.id,
+    taskId: r.id, parentTaskId:r.parent_task_id??null,
     lifecycleState: r.lifecycle_state ?? (r.status==='done'?'accepted':r.status==='doing'?'in_progress':'open'),
     criteria:r.criteria,effortHours:r.effort_hours,currentSubmissionId:r.current_submission_id,citations:JSON.parse(r.source_citations_json||'[]'),
     title: r.title,
@@ -219,14 +223,14 @@ export function registerTaskRoutes(app: OpenAPIHono<AppEnv>): void {
     const now = nowIso();
     const goal=await projectGoal(c.env,member.projectId),graph=await graphSnapshot(c.env,member.projectId);
     if(body.expectedGraphRevision!==undefined&&body.expectedGraphRevision!==goal.graphRevision)throw versionConflict(goal.graphRevision);
-    if(body.dependsOnTaskIds.length){await owner(c.env,member.projectId,c.get('user')!.id);if(body.expectedGraphRevision===undefined)throw validationFailed('设置依赖需要当前依赖图版本');}
-    validateTaskGraph([...graph.taskIds,id],[...graph.edges,...body.dependsOnTaskIds.map(dependency=>({taskId:id,dependsOnTaskId:dependency}))]);
+    if(body.dependsOnTaskIds.length||body.parentTaskId){await owner(c.env,member.projectId,c.get('user')!.id);if(body.expectedGraphRevision===undefined)throw validationFailed('设置依赖需要当前依赖图版本');}
+    validateTaskGraph([...graph.taskIds,id],[...graph.edges,...body.dependsOnTaskIds.map(dependency=>({taskId:id,dependsOnTaskId:dependency})),...(body.parentTaskId?[{taskId:body.parentTaskId,dependsOnTaskId:id}]:[])]);
     if(body.assigneeId&&!await c.env.DB.prepare('SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?2').bind(member.projectId,body.assigneeId).first())throw validationFailed('负责人必须是当前项目成员');
     if(body.requirementId&&!await c.env.DB.prepare('SELECT 1 FROM requirements WHERE project_id=?1 AND id=?2').bind(member.projectId,body.requirementId).first())throw validationFailed('要求必须属于当前项目');
     const token=newId();
     const createdResults = await c.env.DB.batch([c.env.DB.prepare(`UPDATE project_goals SET graph_revision=graph_revision+1,graph_token=?3 WHERE project_id=?1 AND graph_revision=?2 AND EXISTS(SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?4 AND (?5>=0 AND ${projectPermissionSql('project_members.project_id','project_members.user_id','taskManage')})) AND (?6 IS NULL OR EXISTS(SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?6)) AND (?7 IS NULL OR EXISTS(SELECT 1 FROM requirements WHERE project_id=?1 AND id=?7))`).bind(member.projectId,goal.graphRevision,token,c.get('user')!.id,body.dependsOnTaskIds.length?1:0,body.assigneeId,body.requirementId),c.env.DB.prepare(
-      `INSERT INTO tasks (id, project_id, title, detail, assignee_id, due_date, due_precision, status, requirement_id, revision, created_by, created_at, updated_at,criteria,effort_hours,lifecycle_state)
-       SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, CASE WHEN ?5 IS NOT NULL THEN 'doing' ELSE 'todo' END, ?8, 1, ?9, ?10, ?10,?11,?12,CASE WHEN ?5 IS NULL THEN 'open' ELSE 'in_progress' END
+      `INSERT INTO tasks (id, project_id, title, detail, assignee_id, due_date, due_precision, status, requirement_id, revision, created_by, created_at, updated_at,criteria,effort_hours,lifecycle_state,parent_task_id)
+       SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, CASE WHEN ?5 IS NOT NULL THEN 'doing' ELSE 'todo' END, ?8, 1, ?9, ?10, ?10,?11,?12,CASE WHEN ?5 IS NULL THEN 'open' ELSE 'in_progress' END,?14
        WHERE (?5 IS NULL OR EXISTS (
          SELECT 1 FROM project_members pm WHERE pm.project_id = ?2 AND pm.user_id = ?5
        ))
@@ -234,7 +238,7 @@ export function registerTaskRoutes(app: OpenAPIHono<AppEnv>): void {
          SELECT 1 FROM requirements r WHERE r.id = ?8 AND r.project_id = ?2
        )) AND EXISTS(SELECT 1 FROM project_goals WHERE project_id=?2 AND graph_token=?13)`,
     )
-      .bind(id, member.projectId, body.title, body.detail, body.assigneeId, body.dueDate, body.duePrecision, body.requirementId, c.get('user')!.id, now,body.criteria,body.effortHours,token),...body.dependsOnTaskIds.map(dependency=>c.env.DB.prepare(`INSERT INTO task_dependencies(project_id,task_id,depends_on_task_id,created_at) SELECT ?1,?2,?3,?4 WHERE EXISTS(SELECT 1 FROM tasks WHERE id=?2 AND project_id=?1) AND EXISTS(SELECT 1 FROM project_goals WHERE project_id=?1 AND graph_token=?5)`).bind(member.projectId,id,dependency,now,token)),...readinessStatements(c.env,member.projectId,[id],[])]);
+      .bind(id, member.projectId, body.title, body.detail, body.assigneeId, body.dueDate, body.duePrecision, body.requirementId, c.get('user')!.id, now,body.criteria,body.effortHours,token,body.parentTaskId??null),...body.dependsOnTaskIds.map(dependency=>c.env.DB.prepare(`INSERT INTO task_dependencies(project_id,task_id,depends_on_task_id,created_at) SELECT ?1,?2,?3,?4 WHERE EXISTS(SELECT 1 FROM tasks WHERE id=?2 AND project_id=?1) AND EXISTS(SELECT 1 FROM project_goals WHERE project_id=?1 AND graph_token=?5)`).bind(member.projectId,id,dependency,now,token)),...readinessStatements(c.env,member.projectId,[id],body.parentTaskId?[body.parentTaskId]:[])]);
     if(!createdResults[0]?.meta.changes)throw versionConflict((await projectGoal(c.env,member.projectId)).graphRevision);
     const created=createdResults[1]!;
     if ((created.meta?.changes ?? 0) === 0) {
@@ -296,24 +300,47 @@ export function registerTaskRoutes(app: OpenAPIHono<AppEnv>): void {
     );
   });
 
-  app.openapi(createRoute({method:'get',path:'/api/v1/projects/{projectId}/tasks/graph',tags:['tasks'],summary:'完整任务依赖图与统计',request:{params:projectParams},responses:{200:{description:'完整图',content:{'application/json':{schema:apiEnvelope(z.object({items:z.array(z.object({taskId:z.string().uuid(),title:z.string(),detail:z.string(),criteria:z.string(),effortHours:z.number(),dueDate:z.string().nullable(),duePrecision:z.enum(['date','datetime','unknown']),createdAt:z.string(),updatedAt:z.string(),currentSubmissionId:z.string().uuid().nullable(),requirementId:z.string().uuid().nullable(),pendingHumanReview:z.boolean(),status:z.enum(['todo','doing','blocked','done']),lifecycleState:z.string(),assigneeId:z.string().uuid().nullable(),revision:z.number(),dependsOnTaskIds:z.array(z.string().uuid()),unfinishedDependencyIds:z.array(z.string().uuid())})),edges:z.array(z.object({taskId:z.string().uuid(),dependsOnTaskId:z.string().uuid()})),totals:z.object({total:z.number(),todo:z.number(),doing:z.number(),blocked:z.number(),done:z.number()}),graphRevision:z.number(),canRegenerate:z.boolean(),memberIds:z.array(z.string().uuid())}),'TaskGraphResponse')}}}}}),async c=>{
+  app.openapi(createRoute({method:'get',path:'/api/v1/projects/{projectId}/tasks/graph',tags:['tasks'],summary:'完整任务依赖图与统计',request:{params:projectParams},responses:{200:{description:'完整图',content:{'application/json':{schema:apiEnvelope(z.object({items:z.array(z.object({parentTaskId:z.string().uuid().nullable(),manualDependsOnTaskIds:z.array(z.string().uuid()),taskId:z.string().uuid(),title:z.string(),detail:z.string(),criteria:z.string(),effortHours:z.number(),dueDate:z.string().nullable(),duePrecision:z.enum(['date','datetime','unknown']),createdAt:z.string(),updatedAt:z.string(),currentSubmissionId:z.string().uuid().nullable(),requirementId:z.string().uuid().nullable(),pendingHumanReview:z.boolean(),status:z.enum(['todo','doing','blocked','done']),lifecycleState:z.string(),assigneeId:z.string().uuid().nullable(),revision:z.number(),dependsOnTaskIds:z.array(z.string().uuid()),unfinishedDependencyIds:z.array(z.string().uuid())})),edges:z.array(z.object({taskId:z.string().uuid(),dependsOnTaskId:z.string().uuid()})),totals:z.object({total:z.number(),todo:z.number(),doing:z.number(),blocked:z.number(),done:z.number()}),graphRevision:z.number(),canRegenerate:z.boolean(),memberIds:z.array(z.string().uuid())}),'TaskGraphResponse')}}}}}),async c=>{
     const projectId=c.get('member')!.projectId;
     const [rows,edges,policy,goal]=await Promise.all([
-      c.env.DB.prepare(`SELECT id,title,detail,criteria,effort_hours,due_date,due_precision,created_at,updated_at,current_submission_id,requirement_id,status,lifecycle_state,assignee_id,revision, EXISTS(SELECT 1 FROM task_submissions s WHERE s.id=tasks.current_submission_id AND s.task_id=tasks.id AND s.project_id=tasks.project_id AND tasks.status='done' AND tasks.lifecycle_state='accepted' AND s.status='accept' AND json_extract(s.ai_report_json,'$.humanReview.status')='pending') pending_human_review FROM tasks WHERE project_id=?1 AND archived_at IS NULL ORDER BY created_at DESC,id DESC`).bind(projectId).all<{id:string;
+      c.env.DB.prepare(`SELECT id,parent_task_id,title,detail,criteria,effort_hours,due_date,due_precision,created_at,updated_at,current_submission_id,requirement_id,status,lifecycle_state,assignee_id,revision, EXISTS(SELECT 1 FROM task_submissions s WHERE s.id=tasks.current_submission_id AND s.task_id=tasks.id AND s.project_id=tasks.project_id AND tasks.status='done' AND tasks.lifecycle_state='accepted' AND s.status='accept' AND json_extract(s.ai_report_json,'$.humanReview.status')='pending') pending_human_review FROM tasks WHERE project_id=?1 AND archived_at IS NULL ORDER BY created_at DESC,id DESC`).bind(projectId).all<{id:string;parent_task_id:string|null;
         title:string;detail:string;criteria:string;effort_hours:number;due_date:string|null;due_precision:'date'|'datetime'|'unknown'|null;
         created_at:string;updated_at:string;current_submission_id:string|null;requirement_id:string|null;
         pending_human_review:number;status:'todo'|'doing'|'blocked'|'done';lifecycle_state:string|null;
         assignee_id:string|null;revision:number}>(),
-      c.env.DB.prepare('SELECT d.task_id,d.depends_on_task_id FROM task_dependencies d JOIN tasks t ON t.id=d.task_id AND t.project_id=d.project_id JOIN tasks dependency ON dependency.id=d.depends_on_task_id AND dependency.project_id=d.project_id WHERE d.project_id=?1 AND t.archived_at IS NULL AND dependency.archived_at IS NULL ORDER BY d.task_id,d.depends_on_task_id').bind(projectId).all<{task_id:string;depends_on_task_id:string}>(),
+      c.env.DB.prepare('SELECT d.task_id,d.depends_on_task_id,d.manual_origin FROM task_dependencies d JOIN tasks t ON t.id=d.task_id AND t.project_id=d.project_id JOIN tasks dependency ON dependency.id=d.depends_on_task_id AND dependency.project_id=d.project_id WHERE d.project_id=?1 AND t.archived_at IS NULL AND dependency.archived_at IS NULL ORDER BY d.task_id,d.depends_on_task_id').bind(projectId).all<{task_id:string;depends_on_task_id:string;manual_origin:number}>(),
       c.env.DB.prepare(`SELECT ${pristineTasksSql('?1')} pristine`).bind(projectId).first<{pristine:number}>(),
       projectGoal(c.env,projectId),
     ]);
-    const status=new Map(rows.results.map(row=>[row.id,row.status])),dependencies=new Map<string,string[]>();
-    for(const edge of edges.results){const ids=dependencies.get(edge.task_id)??[];ids.push(edge.depends_on_task_id);dependencies.set(edge.task_id,ids);}
+    const status=new Map(rows.results.map(row=>[row.id,row.status])),dependencies=new Map<string,string[]>(),manualDependencies=new Map<string,string[]>();
+    for(const edge of edges.results){if(edge.manual_origin===1){const ids=manualDependencies.get(edge.task_id)??[];ids.push(edge.depends_on_task_id);manualDependencies.set(edge.task_id,ids);}const ids=dependencies.get(edge.task_id)??[];ids.push(edge.depends_on_task_id);dependencies.set(edge.task_id,ids);}
     const totals={total:rows.results.length,todo:0,doing:0,blocked:0,done:0};
-    const items=rows.results.map(row=>{totals[row.status]++;const dependsOnTaskIds=dependencies.get(row.id)??[];return {taskId:row.id,title:row.title,detail:row.detail,criteria:row.criteria,effortHours:row.effort_hours,dueDate:row.due_date,duePrecision:row.due_precision??'unknown',createdAt:row.created_at,updatedAt:row.updated_at,currentSubmissionId:row.current_submission_id,requirementId:row.requirement_id,pendingHumanReview:row.pending_human_review===1,status:row.status,lifecycleState:row.lifecycle_state??(row.status==='done'?'accepted':row.status==='doing'?'in_progress':'open'),assigneeId:row.assignee_id,revision:row.revision,dependsOnTaskIds,unfinishedDependencyIds:dependsOnTaskIds.filter(id=>status.get(id)!=='done')};});
+    const items=rows.results.map(row=>{totals[row.status]++;const dependsOnTaskIds=dependencies.get(row.id)??[];return {parentTaskId:row.parent_task_id,manualDependsOnTaskIds:manualDependencies.get(row.id)??[],taskId:row.id,title:row.title,detail:row.detail,criteria:row.criteria,effortHours:row.effort_hours,dueDate:row.due_date,duePrecision:row.due_precision??'unknown',createdAt:row.created_at,updatedAt:row.updated_at,currentSubmissionId:row.current_submission_id,requirementId:row.requirement_id,pendingHumanReview:row.pending_human_review===1,status:row.status,lifecycleState:row.lifecycle_state??(row.status==='done'?'accepted':row.status==='doing'?'in_progress':'open'),assigneeId:row.assignee_id,revision:row.revision,dependsOnTaskIds,unfinishedDependencyIds:dependsOnTaskIds.filter(id=>status.get(id)!=='done')};});
     const memberRows=await c.env.DB.prepare('SELECT user_id FROM project_members WHERE project_id=?1').bind(projectId).all<{user_id:string}>();
     return c.json(apiData(c,{memberIds:memberRows.results.map(row=>row.user_id),items,edges:edges.results.map(row=>({taskId:row.task_id,dependsOnTaskId:row.depends_on_task_id})),totals,graphRevision:goal.graphRevision,canRegenerate:policy?.pristine===1}));
+  });
+
+  const focusTaskSchema=taskSchema.extend({pinned:z.boolean(),focusReasons:z.array(z.string())});
+  app.openapi(createRoute({method:'get',path:'/api/v1/projects/{projectId}/tasks/focus',tags:['tasks'],request:{params:projectParams},responses:{200:{description:'个人重点任务',content:{'application/json':{schema:apiEnvelope(z.object({items:z.array(focusTaskSchema),waitingReview:z.array(focusTaskSchema),reviewRequired:z.array(focusTaskSchema)}),'TaskFocusResponse')}}}}}),async c=>{
+    const projectId=c.get('member')!.projectId,userId=c.get('user')!.id;
+    const [rows,pins,access]=await Promise.all([
+      c.env.DB.prepare('SELECT * FROM tasks WHERE project_id=?1 AND archived_at IS NULL').bind(projectId).all<TaskRow>(),
+      c.env.DB.prepare('SELECT task_id FROM task_pins WHERE project_id=?1 AND user_id=?2').bind(projectId,userId).all<{task_id:string}>(),
+      projectAccess(c.env,projectId,userId),
+    ]);
+    const metadata=await readTaskPage(c.env,rows.results);
+    const items=rows.results.map(row=>({...toTask(row),...metadata.get(row.id)}));
+    return c.json(apiData(c,focusTasks(items,userId,new Set(pins.results.map(row=>row.task_id)),access.permissions.taskManage)));
+  });
+  app.openapi(createRoute({method:'put',path:'/api/v1/projects/{projectId}/tasks/{taskId}/parent',tags:['tasks'],request:{params:taskParams,body:{required:true,content:{'application/json':{schema:z.object({parentTaskId:z.string().uuid().nullable(),expectedGraphRevision:z.number().int().positive()}).strict()}}}},responses:{200:{description:'父任务已更新',content:{'application/json':{schema:apiEnvelope(z.object({taskId:z.string().uuid(),parentTaskId:z.string().uuid().nullable(),graphRevision:z.number()}),'TaskParentResponse')}}}}}),async c=>{
+    const body=c.req.valid('json');return c.json(apiData(c,await changeTaskParent(c.env,c.get('member')!.projectId,c.get('user')!.id,c.req.valid('param').taskId,body.parentTaskId,body.expectedGraphRevision)));
+  });
+  app.openapi(createRoute({method:'put',path:'/api/v1/projects/{projectId}/tasks/{taskId}/pin',tags:['tasks'],request:{params:taskParams,body:{required:true,content:{'application/json':{schema:z.object({pinned:z.boolean()}).strict()}}}},responses:{200:{description:'个人置顶已更新',content:{'application/json':{schema:apiEnvelope(z.object({taskId:z.string().uuid(),pinned:z.boolean()}),'TaskPinResponse')}}}}}),async c=>{
+    const projectId=c.get('member')!.projectId,userId=c.get('user')!.id,taskId=c.req.valid('param').taskId,{pinned}=c.req.valid('json');
+    if(!await c.env.DB.prepare('SELECT 1 FROM tasks WHERE id=?1 AND project_id=?2 AND archived_at IS NULL').bind(taskId,projectId).first())throw notFound('任务不存在');
+    if(pinned)await c.env.DB.prepare(`INSERT OR IGNORE INTO task_pins(project_id,user_id,task_id,created_at) SELECT ?1,?2,?3,?4 WHERE EXISTS(SELECT 1 FROM project_members WHERE project_id=?1 AND user_id=?2) AND EXISTS(SELECT 1 FROM tasks WHERE id=?3 AND project_id=?1 AND archived_at IS NULL)`).bind(projectId,userId,taskId,nowIso()).run();
+    else await c.env.DB.prepare('DELETE FROM task_pins WHERE project_id=?1 AND user_id=?2 AND task_id=?3').bind(projectId,userId,taskId).run();
+    return c.json(apiData(c,{taskId,pinned}));
   });
 
   app.openapi(taskGetRoute, async (c) => {

@@ -1,3 +1,4 @@
+import { uniqueEdges } from './task-hierarchy';
 import { effectiveStandardCaptureGuardSql } from './effective-standard';
 import { assertCanRegenerate, pristineTasksSql } from './task-planning-policy';
 import { readinessStatements } from './task-readiness';
@@ -12,6 +13,7 @@ import { invalidState, notFound, validationFailed,versionConflict } from '../cor
 import { projectGoal, graphSnapshot, validateTaskGraph } from './project-simplification';
 import { buildProposalApplySql, buildSubmissionDecideWhereSql } from './sql-guards';
 export interface CollaborationTask {
+    parent_task_id?: string | null;
     id: string;
     project_id: string;
     title: string;
@@ -30,7 +32,7 @@ export interface CollaborationTask {
     created_at: string;
     updated_at: string;
 }
-export const toCollaborationTask = (r: CollaborationTask) => ({ taskId: r.id, startedAt:r.started_at??null, archivedAt:r.archived_at??null, title: r.title, detail: r.detail, status: r.status, assigneeId: r.assignee_id, revision: r.revision, lifecycleState: r.lifecycle_state??(r.status==='done'?'accepted':r.status==='doing'?'in_progress':'open'), criteria: r.criteria, citations: JSON.parse(r.source_citations_json || '[]'), effortHours: r.effort_hours, dueDate: r.due_date ?? null, currentSubmissionId: r.current_submission_id, createdAt: r.created_at, updatedAt: r.updated_at });
+export const toCollaborationTask = (r: CollaborationTask) => ({ parentTaskId:r.parent_task_id??null, taskId: r.id, startedAt:r.started_at??null, archivedAt:r.archived_at??null, title: r.title, detail: r.detail, status: r.status, assigneeId: r.assignee_id, revision: r.revision, lifecycleState: r.lifecycle_state??(r.status==='done'?'accepted':r.status==='doing'?'in_progress':'open'), criteria: r.criteria, citations: JSON.parse(r.source_citations_json || '[]'), effortHours: r.effort_hours, dueDate: r.due_date ?? null, currentSubmissionId: r.current_submission_id, createdAt: r.created_at, updatedAt: r.updated_at });
 export interface Submission {
     id: string;
     project_id: string;
@@ -86,13 +88,13 @@ export async function applyProposal(env: Env, projectId: string, proposalId: str
         goal?:{title:string;detail:string};
         tasks?: Array<{
             title: string;
-            key?:string;dependsOn?:string[];
+            key?:string;dependsOn?:string[];parent?:string|null;
             detail: string;
             criteria: string;
             effortHours: number;
             citations?: unknown[];
         }>;
-        updates?: Array<{ taskId: string; title: string; detail: string; criteria: string; effortHours: number; expectedRevision: number; citations?: unknown[] }>;
+        updates?: Array<{ parentTaskId?:string|null;taskId: string; title: string; detail: string; criteria: string; effortHours: number; expectedRevision: number; citations?: unknown[] }>;
         assignments?: Array<{
             taskId: string;
             assigneeId: string | null;
@@ -129,7 +131,7 @@ export async function applyProposal(env: Env, projectId: string, proposalId: str
       kind: p.kind,
       planningAction: payload.planningAction,
     });
-    batch.push(env.DB.prepare(`${proposalApplyCte} UPDATE collaboration_proposals SET status='applied',revision=revision+1,mutation_token=?5,updated_at=?8 WHERE ${proposalApplyWhere}`).bind(proposalId, projectId, expectedRevision, actorId, nonce, automatic ? 1 : 0, configVersionId ?? null, nowIso(),JSON.stringify(payload)));
+    batch.push(env.DB.prepare(`${proposalApplyCte} UPDATE collaboration_proposals SET status='applied',revision=revision+1,mutation_token=?5,updated_at=?8 WHERE ${proposalApplyWhere} ${p.kind==='decompose'?`AND EXISTS(SELECT 1 FROM project_goals WHERE project_id=?2 AND graph_revision=${goal.graphRevision})`:''}`).bind(proposalId, projectId, expectedRevision, actorId, nonce, automatic ? 1 : 0, configVersionId ?? null, nowIso(),JSON.stringify(payload)));
     const gate = `EXISTS(SELECT 1 FROM collaboration_proposals WHERE id=?1 AND status='applied' AND mutation_token=?2)`;
     if (p.kind === 'decompose') {
         if ((!payload.tasks?.length && !payload.updates?.length))
@@ -139,8 +141,16 @@ export async function applyProposal(env: Env, projectId: string, proposalId: str
         if(replacing && payload.updates?.length)throw validationFailed('重新生成不得修改旧任务');
         if(replacing)batch.push(env.DB.prepare(`UPDATE tasks SET archived_at=?3,revision=revision+1,updated_at=?3 WHERE project_id=?4 AND archived_at IS NULL AND ${gate}`).bind(proposalId,nonce,nowIso(),projectId));
         for(let i=0;i<(payload.tasks??[]).length;i++){const key=payload.tasks![i]!.key??`t${i+1}`;if(taskKeys.has(key))throw validationFailed('拆解任务标识不可重复');taskKeys.set(key,newId());}
+        if((payload.tasks??[]).some(task=>new Set(task.dependsOn??[]).size!==(task.dependsOn??[]).length))throw validationFailed('依赖不可重复');
         const newEdges=(payload.tasks??[]).flatMap((t,i)=>(t.dependsOn??[]).map(key=>({taskId:taskKeys.get(t.key??`t${i+1}`)!,dependsOnTaskId:taskKeys.get(key)??key})));
-        validateTaskGraph([...graph.taskIds,...taskKeys.values()],[...graph.edges,...newEdges]);
+        const parentChanges = [
+          ...(payload.tasks??[]).map((task,i)=>({taskId:taskKeys.get(task.key??`t${i+1}`)!,parentTaskId:task.parent?taskKeys.get(task.parent)??task.parent:null})),
+          ...(payload.updates??[]).filter(task=>task.parentTaskId!==undefined).map(task=>({taskId:task.taskId,parentTaskId:task.parentTaskId!})),
+        ];
+        const existingParents=replacing?[]:(await env.DB.prepare('SELECT id,parent_task_id FROM tasks WHERE project_id=?1 AND archived_at IS NULL').bind(projectId).all<{id:string;parent_task_id:string|null}>()).results;
+        const manualEdges=replacing?[]:(await env.DB.prepare('SELECT task_id,depends_on_task_id FROM task_dependencies WHERE project_id=?1 AND manual_origin=1').bind(projectId).all<{task_id:string;depends_on_task_id:string}>()).results;
+        const remainingEdges=graph.edges.filter(edge=>!parentChanges.some(change=>change.taskId===edge.dependsOnTaskId&&existingParents.some(task=>task.id===change.taskId&&task.parent_task_id===edge.taskId))||manualEdges.some(manual=>manual.task_id===edge.taskId&&manual.depends_on_task_id===edge.dependsOnTaskId));
+        validateTaskGraph([...graph.taskIds,...taskKeys.values()],uniqueEdges([...remainingEdges,...newEdges,...parentChanges.flatMap(change=>change.parentTaskId?[{taskId:change.parentTaskId,dependsOnTaskId:change.taskId}]:[])]));
         batch.push(env.DB.prepare(`UPDATE project_goals SET title=?3,detail=?4,revision=revision+?5,graph_revision=graph_revision+1,updated_at=?6 WHERE project_id=?7 AND ${gate}`).bind(proposalId,nonce,payload.goal?.title??goal.title,payload.goal?.detail??goal.detail,payload.goal?1:0,nowIso(),projectId));
         for (const [i,t] of (payload.tasks ?? []).entries()) {
             if (!t.title || !t.criteria || !Number.isFinite(t.effortHours) || t.effortHours < 0.25 || t.effortHours > 200)
@@ -150,6 +160,8 @@ export async function applyProposal(env: Env, projectId: string, proposalId: str
             batch.push(env.DB.prepare(`INSERT INTO tasks(id,project_id,title,detail,status,revision,created_by,created_at,updated_at,lifecycle_state,criteria,effort_hours,plan_proposal_id,source_citations_json) SELECT ?3,?4,?5,?6,'todo',1,?7,?8,?8,'open',?9,?10,?11,?12 WHERE ${gate}`).bind(proposalId, nonce, taskId, projectId, t.title, t.detail || '', actorId, nowIso(), t.criteria, t.effortHours, proposalId, JSON.stringify(t.citations ?? [])));
         }
         for(const edge of newEdges)batch.push(env.DB.prepare(`INSERT INTO task_dependencies(project_id,task_id,depends_on_task_id,created_at) SELECT ?3,?4,?5,?6 WHERE ${gate}`).bind(proposalId,nonce,projectId,edge.taskId,edge.dependsOnTaskId,nowIso()));
+        // Apply parent links only after every new task exists. Triggers maintain source-tagged dependencies.
+        for(const change of parentChanges)batch.push(env.DB.prepare(`UPDATE tasks SET parent_task_id=?3 WHERE id=?4 AND project_id=?5 AND ${gate}`).bind(proposalId,nonce,change.parentTaskId,change.taskId,projectId));
         if (new Set(payload.updates?.map(t => t.taskId)).size !== (payload.updates?.length ?? 0)) throw validationFailed('重复的任务调整');
         for (const update of payload.updates ?? []) {
             if (!update.title || !update.criteria || update.title.length > 200 || update.detail.length > 4000 || update.criteria.length > 4000 || !Number.isFinite(update.effortHours) || update.effortHours < 0.25 || update.effortHours > 200) throw validationFailed('任务调整内容无效');
@@ -163,7 +175,7 @@ export async function applyProposal(env: Env, projectId: string, proposalId: str
             batch.push(env.DB.prepare(`UPDATE tasks SET assignee_id=?3,current_submission_id=CASE WHEN lifecycle_state='accepted' THEN current_submission_id ELSE NULL END,lifecycle_state=CASE WHEN lifecycle_state='accepted' THEN lifecycle_state WHEN ?3 IS NULL THEN 'open' ELSE 'in_progress' END,status=CASE WHEN lifecycle_state='accepted' THEN status WHEN ?3 IS NULL THEN 'todo' ELSE 'doing' END,revision=revision+1,updated_at=?4 WHERE id=?5 AND project_id=?6 AND revision=?7 AND assignee_id IS NOT ?3 AND ${gate}`).bind(proposalId, nonce, a.assigneeId, nowIso(), a.taskId, projectId, a.expectedRevision));
     }
     batch.push(env.DB.prepare(`INSERT INTO events(id,project_id,actor_type,actor_id,type,entity_type,entity_id,dedup_key,payload_json,occurred_at) SELECT ?3,?4,?5,?6,'collaboration.proposal_applied','collaboration',?1,?2,?7,?8 WHERE ${gate}`).bind(proposalId, nonce, newId(), projectId, automatic ? 'ai' : 'user', automatic ? `project-ai:${projectId}` : actorId, JSON.stringify(payload), nowIso()));
-    if(p.kind==='decompose')batch.push(...readinessStatements(env,projectId,taskIds,[]));
+    if(p.kind==='decompose')batch.push(...readinessStatements(env,projectId,taskIds));
     const results = await env.DB.batch(batch);
     if (!results[0]!.meta.changes)
         throw invalidState('建议已失效、成员或任务已变化，请重新生成');

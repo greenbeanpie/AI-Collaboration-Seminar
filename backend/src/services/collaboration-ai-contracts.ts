@@ -6,7 +6,8 @@ export const decompositionSchema = z.object({
     reusedTaskIds:z.array(z.string().uuid()).default([]),
     goal:z.object({title:z.string().trim().min(1).max(200),detail:z.string().max(12000)}).optional(),
     tasks: z.array(z.object({
-        key:z.string().trim().min(1).max(64).optional(),dependsOn:z.array(z.string().min(1).max(64)).max(1000).default([]),
+        parent:z.string().trim().min(1).max(64).nullable().optional(),
+        key:z.string().trim().min(1).max(64).optional(),dependsOn:z.array(z.string().min(1).max(64)).max(1000).refine(ids=>new Set(ids).size===ids.length,'依赖不可重复').default([]),
         title: z.string().trim().min(1).max(200),
         detail: z.string().trim().max(4000),
         criteria: z.string().trim().min(1).max(4000),
@@ -43,7 +44,7 @@ export const rubricScoringSchema = z.discriminatedUnion('status', [
 ]);
 export const adjustmentSchema = z.object({
     tasks: z.array(decompositionSchema.shape.tasks.element).min(0).default([]),
-    updates: z.array(z.object({ taskId: z.string().uuid(), title: z.string().trim().min(1).max(200), detail: z.string().trim().max(4000), criteria: z.string().trim().min(1).max(4000), effortHours: z.number().min(0.25).max(200) }).strict()).default([]),
+    updates: z.array(z.object({ parentTaskId:z.string().uuid().nullable().optional(),taskId: z.string().uuid(), title: z.string().trim().min(1).max(200), detail: z.string().trim().max(4000), criteria: z.string().trim().min(1).max(4000), effortHours: z.number().min(0.25).max(200) }).strict()).default([]),
 }).strict().refine(value => value.tasks.length + value.updates.length > 0, '需提供新增或修改任务');
 export const projectSourceCitationSchema = z.object({ sourceVersionId: z.string().uuid(), fragmentId: z.string().uuid(), pageNumber: z.number().int().nullable(), quote: z.string().trim().min(1).max(2000) }).strict();
 export const groundedTaskSchema = decompositionSchema.shape.tasks.element.extend({ citations: z.array(projectSourceCitationSchema).min(1).max(8) });

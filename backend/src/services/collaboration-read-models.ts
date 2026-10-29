@@ -13,7 +13,7 @@ export async function readTaskPage(env: Env, tasks: CollaborationTask[]) {
   const citations = tasks.map(task=>JSON.parse(task.source_citations_json || '[]') as Array<{sourceVersionId:string}>);
   const versionIds = JSON.stringify([...new Set(citations.flat().map(cite=>cite.sourceVersionId))]);
   const [dependencies,reviews,sources,summaries] = await Promise.all([
-    env.DB.prepare(`SELECT d.task_id,d.depends_on_task_id,t.status FROM task_dependencies d JOIN tasks t ON t.id=d.depends_on_task_id AND t.project_id=d.project_id WHERE d.project_id=?1 AND d.task_id IN(SELECT value FROM json_each(?2)) ORDER BY d.depends_on_task_id`).bind(projectId,ids).all<{task_id:string;depends_on_task_id:string;status:string}>(),
+    env.DB.prepare(`SELECT d.task_id,d.depends_on_task_id,d.manual_origin,t.status FROM task_dependencies d JOIN tasks t ON t.id=d.depends_on_task_id AND t.project_id=d.project_id WHERE d.project_id=?1 AND d.task_id IN(SELECT value FROM json_each(?2)) ORDER BY d.depends_on_task_id`).bind(projectId,ids).all<{task_id:string;depends_on_task_id:string;status:string;manual_origin:number}>(),
     env.DB.prepare(`SELECT t.id FROM tasks t JOIN task_submissions s ON s.id=t.current_submission_id AND s.task_id=t.id AND s.project_id=t.project_id WHERE t.project_id=?1 AND t.id IN(SELECT value FROM json_each(?2)) AND t.status='done' AND t.lifecycle_state='accepted' AND s.status='accept' AND json_extract(s.ai_report_json,'$.humanReview.status')='pending'`).bind(projectId,ids).all<{id:string}>(),
     env.DB.prepare(`SELECT v.id,s.deleted_at,${sourceLifecycleGuard('v.id','NULL')} available FROM source_versions v JOIN sources s ON s.id=v.source_id WHERE v.project_id=?1 AND s.project_id=?1 AND v.id IN(SELECT value FROM json_each(?2))`).bind(projectId,versionIds).all<{id:string;deleted_at:string|null;available:number}>(),
     readTaskSummaries(env,tasks),
@@ -24,7 +24,7 @@ export async function readTaskPage(env: Env, tasks: CollaborationTask[]) {
   const availability = new Map(sources.results.map(row=>[row.id,row]));
   return new Map(tasks.map((task,index)=> {
     const edges=byTask.get(task.id)??[];
-    return [task.id,{...summaries.get(task.id)!,pendingHumanReview:pending.has(task.id),dependsOnTaskIds:edges.map(row=>row.depends_on_task_id),unfinishedDependencyIds:edges.filter(row=>row.status!=='done').map(row=>row.depends_on_task_id),citations:citations[index]!.map(cite=>{
+    return [task.id,{...summaries.get(task.id)!,parentTaskId:task.parent_task_id??null,manualDependsOnTaskIds:edges.filter(row=>row.manual_origin===1).map(row=>row.depends_on_task_id),pendingHumanReview:pending.has(task.id),dependsOnTaskIds:edges.map(row=>row.depends_on_task_id),unfinishedDependencyIds:edges.filter(row=>row.status!=='done').map(row=>row.depends_on_task_id),citations:citations[index]!.map(cite=>{
       const source=availability.get(cite.sourceVersionId);
       return {...cite,...(source?.available?{}:{availability:'unavailable' as const,deletedAt:source?.deleted_at??null})};
     })}];
