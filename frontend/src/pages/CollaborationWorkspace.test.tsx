@@ -627,3 +627,12 @@ it('keeps feedback read-only for an explicitly authorized task manager with a st
   expect(screen.getByLabelText('持续项目反馈')).toHaveAttribute('readonly');
   expect(screen.queryByRole('button', {name:'保存反馈'})).toBeNull();
 });
+
+
+it('uses the complete graph for relationships when paginated tasks have the same revision but old edges', async () => {
+  const parent = { ...task, taskId: 'parent', title: '汇总任务' };
+  const { client, view } = setup({ tasks: [parent, task] });
+  act(() => client.setQueryData(['task-graph', 'p1'], { items: [{ ...parent, dependsOnTaskIds: ['t1'], unfinishedDependencyIds: ['t1'] }, { ...task, parentTaskId: 'parent' }], graphRevision: 10, totals: { total: 2, done: 0 } }));
+  expect(await screen.findByLabelText('父任务路径')).toHaveTextContent('汇总任务');
+  expect(view.container.querySelector('.collab-tree .collab-task')).toHaveTextContent('子任务 0/1 已完成');
+});

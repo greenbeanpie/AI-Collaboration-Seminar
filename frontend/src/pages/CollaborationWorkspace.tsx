@@ -157,7 +157,7 @@ function ProjectCollaborationWorkspace() {
       followedJobs.current.add(output.followupJobId); setHandoffNotice('任务已拆解，正在跟进服务端创建的分工任务。'); setJobId(output.followupJobId);
     }
   }, [job.job]);
-  const rows = dependencyOrder((graph.data?.items ?? []).map(task => { const loaded = tasks.data?.items.find(row => row.taskId === task.taskId); return loaded && loaded.revision >= task.revision ? { ...task, ...loaded } : { ...loaded, ...task }; }));
+  const rows = dependencyOrder((graph.data?.items ?? []).map(task => { const loaded = tasks.data?.items.find(row => row.taskId === task.taskId); const latest = loaded && loaded.revision > task.revision ? { ...task, ...loaded } : { ...loaded, ...task }; return { ...latest, parentTaskId: task.parentTaskId, dependsOnTaskIds: task.dependsOnTaskIds, manualDependsOnTaskIds: task.manualDependsOnTaskIds, unfinishedDependencyIds: task.unfinishedDependencyIds }; }));
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const focus = useTaskFocus(projectId);
   const treeRows = taskTreeRows(rows, task => task.title.toLocaleLowerCase().includes(taskSearch.toLocaleLowerCase()) && (statusFilter === 'all' || (statusFilter === 'pending_review' ? Boolean(task.pendingHumanReview) : task.lifecycleState === statusFilter && (statusFilter !== 'accepted' || !task.pendingHumanReview))), collapsed, Boolean(taskSearch || statusFilter !== 'all'));
