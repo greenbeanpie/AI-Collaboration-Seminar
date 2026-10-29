@@ -140,7 +140,7 @@ export async function applyProposal(env: Env, projectId: string, proposalId: str
         const graph=replacing?{taskIds:[] as string[],edges:[]}:await graphSnapshot(env,projectId),taskKeys=new Map<string,string>();
         if(replacing && payload.updates?.length)throw validationFailed('重新生成不得修改旧任务');
         if(replacing)batch.push(env.DB.prepare(`UPDATE tasks SET archived_at=?3,revision=revision+1,updated_at=?3 WHERE project_id=?4 AND archived_at IS NULL AND ${gate}`).bind(proposalId,nonce,nowIso(),projectId));
-        for(let i=0;i<(payload.tasks??[]).length;i++){const key=payload.tasks![i]!.key??`t${i+1}`;if(taskKeys.has(key))throw validationFailed('拆解任务标识不可重复');taskKeys.set(key,newId());}
+        for(let i=0;i<(payload.tasks??[]).length;i++){const key=payload.tasks![i]!.key??`t${i+1}`;if(taskKeys.has(key)||graph.taskIds.includes(key))throw validationFailed('拆解任务标识不可重复或覆盖已有任务 ID');taskKeys.set(key,newId());}
         if((payload.tasks??[]).some(task=>new Set(task.dependsOn??[]).size!==(task.dependsOn??[]).length))throw validationFailed('依赖不可重复');
         const newEdges=(payload.tasks??[]).flatMap((t,i)=>(t.dependsOn??[]).map(key=>({taskId:taskKeys.get(t.key??`t${i+1}`)!,dependsOnTaskId:taskKeys.get(key)??key})));
         const parentChanges = [

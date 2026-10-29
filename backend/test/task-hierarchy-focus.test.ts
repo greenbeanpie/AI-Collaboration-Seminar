@@ -52,6 +52,20 @@ describe('task hierarchy and personal focus',()=>{
   expect((await req('/tasks/focus')).data.waitingReview).toHaveLength(1);expect((await req('/tasks/focus')).data.reviewRequired).toHaveLength(1);expect((await req('/tasks/focus','GET',undefined,true)).data.reviewRequired).toEqual([]);
   await env.DB.prepare("UPDATE tasks SET status='done',lifecycle_state='accepted' WHERE id=?1 AND project_id=?2").bind(other.taskId,projectId).run();expect((await req('/tasks/focus')).data.items).toEqual([]);
  });
+ it('AI reparenting preserves a matching manual edge; regeneration archives history without leaking old pins',async()=>{
+  const {owner,projectId,create,req,graph}=await fixture();
+  const a=await create('旧父'),b=await create('新父'),child=await create('子',{parentTaskId:a.taskId,expectedGraphRevision:(await graph()).graphRevision});
+  await req(`/tasks/${a.taskId}/dependencies`,'PUT',{dependsOnTaskIds:[child.taskId],expectedGraphRevision:(await graph()).graphRevision});
+  const proposal=async(payload:unknown)=>{const jobId=newId(),id=newId();await env.DB.prepare("INSERT INTO jobs(id,project_id,kind,status,input_json,attempts,created_at,updated_at) VALUES(?1,?2,'agent_run','succeeded',?3,0,?4,?4)").bind(jobId,projectId,JSON.stringify({profileStamp:await profileStamp(env,projectId)}),nowIso()).run();await env.DB.prepare("INSERT INTO collaboration_proposals(id,project_id,kind,job_id,payload_json,settings_revision,created_at,updated_at) VALUES(?1,?2,'decompose',?3,?4,1,?5,?5)").bind(id,projectId,jobId,JSON.stringify(payload),nowIso()).run();return id;};
+  const update=await proposal({updates:[{taskId:child.taskId,parentTaskId:b.taskId,expectedRevision:child.revision,title:child.title,detail:child.detail,criteria:child.criteria,effortHours:child.effortHours}]});
+  await applyProposal(env,projectId,update,1,owner.userId);let g=await graph();
+  expect(g.items.find((t:any)=>t.taskId===a.taskId).manualDependsOnTaskIds).toEqual([child.taskId]);expect(g.items.find((t:any)=>t.taskId===b.taskId).dependsOnTaskIds).toEqual([child.taskId]);
+  const collision=await proposal({tasks:[{key:a.taskId,parent:b.taskId,title:'冲突标识',detail:'',criteria:'x',effortHours:1}]});await expect(applyProposal(env,projectId,collision,1,owner.userId)).rejects.toThrow('覆盖已有任务');
+  await req(`/tasks/${child.taskId}/pin`,'PUT',{pinned:true});
+  const replacement=await proposal({planningAction:'regenerate',tasks:[{key:'new',title:'新计划',detail:'',criteria:'x',effortHours:1}]});await applyProposal(env,projectId,replacement,1,owner.userId);g=await graph();expect(g.items).toHaveLength(1);expect(g.items[0].parentTaskId).toBeNull();expect((await req('/tasks/focus')).data.items).toEqual([]);
+  const historical=await env.DB.prepare('SELECT parent_task_id,archived_at FROM tasks WHERE id=?1').bind(child.taskId).first<{parent_task_id:string;archived_at:string}>();expect(historical?.parent_task_id).toBe(b.taskId);expect(historical?.archived_at).toBeTruthy();
+  expect((await env.DB.prepare('SELECT manual_origin,hierarchy_origin FROM task_dependencies WHERE task_id=?1 AND depends_on_task_id=?2').bind(a.taskId,child.taskId).first())).toEqual({manual_origin:1,hierarchy_origin:0});
+ });
  it('applies AI parent references after all new tasks exist and rejects selected orphan references',async()=>{
   const {owner,projectId,graph}=await fixture();const jobId=newId(),proposalId=newId();
   await env.DB.prepare("INSERT INTO jobs(id,project_id,kind,status,input_json,attempts,created_at,updated_at) VALUES(?1,?2,'agent_run','succeeded',?3,0,?4,?4)").bind(jobId,projectId,JSON.stringify({profileStamp:await profileStamp(env,projectId)}),nowIso()).run();
