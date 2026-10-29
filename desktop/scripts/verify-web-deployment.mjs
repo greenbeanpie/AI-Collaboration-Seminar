@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -14,7 +14,22 @@ assert.equal(page.status, 200); assert.ok((await page.text()).includes(script), 
 const asset = await fetchChecked(script);
 assert.equal(asset.status, 200);
 const code = await asset.text();
-for (const command of ['desktop_hello', 'desktop_report_state', 'desktop_set_auto_restart']) assert.ok(code.includes(command), 'Missing command in deployed build: ' + command);
+// Vite can move bridge code into a shared chunk. Verify its published bytes too,
+// rather than assuming all native commands live in the entry module.
+const assetsDirectory = path.join(root, 'frontend/dist/assets');
+const chunks = await Promise.all((await readdir(assetsDirectory)).filter(name => name.endsWith('.js')).map(async name => ({ name, code: await readFile(path.join(assetsDirectory, name), 'utf8') })));
+const verifiedChunks = new Set();
+for (const command of ['desktop_hello', 'desktop_report_state', 'desktop_set_auto_restart']) {
+  if (code.includes(command)) continue;
+  const chunk = chunks.find(item => item.code.includes(command));
+  assert.ok(chunk, 'Missing native command in build: ' + command);
+  if (!verifiedChunks.has(chunk.name)) {
+    const published = await fetchChecked('/assets/' + chunk.name);
+    assert.equal(published.status, 200);
+    assert.equal(await published.text(), chunk.code, 'Published bridge chunk differs: ' + chunk.name);
+    verifiedChunks.add(chunk.name);
+  }
+}
 const session = await fetchChecked('/api/v1/auth/session'); assert.equal(session.status, 401, 'Anonymous access must remain rejected');
 const capabilities = await fetchChecked('/api/v1/capabilities'); assert.equal(capabilities.status, 200);
 const value = await capabilities.json(); assert.equal(value.data.environment, 'production'); assert.equal(value.data.authentication.passwordEnabled, true);
