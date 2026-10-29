@@ -55,6 +55,13 @@ if (OperatingSystem.IsWindows())
     using var repository = new ClientRepository(store, secrets, new FixtureHandler());
     Check((await repository.GetAsync("/capabilities"))?["ok"]?.GetValue<bool>() == true, "HTTP envelope contract");
 }
+var originalProposal = new JsonObject { ["taskId"] = "child", ["title"] = "Keep this" };
+var removedParent = TaskProposalParent.Apply(originalProposal, "parentTaskId", "parent", "");
+Check(removedParent.ContainsKey("parentTaskId") && removedParent["parentTaskId"] == null, "Clear inherited proposal parent explicitly writes null");
+Check(!originalProposal.ContainsKey("parentTaskId"), "Parent edits preserve proposal baseline after failed requests");
+Check(!TaskProposalParent.Apply(originalProposal, "parentTaskId", "parent", "parent").ContainsKey("parentTaskId"), "Unchanged inherited parent retains omission");
+Check(TaskProposalParent.Apply(originalProposal, "parentTaskId", "parent", "another")["parentTaskId"]?.ToString() == "another", "Changed proposal parent is explicit");
+Check(TaskProposalParent.Apply(removedParent, "parentTaskId", "", "").ContainsKey("parentTaskId"), "Explicit null proposal parent remains null");
 await AppearanceChecks.RunAsync(Check);
 Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { passed = results.Count, tests = results }));
 

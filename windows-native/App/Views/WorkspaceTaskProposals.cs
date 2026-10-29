@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Buwei.Windows.Core;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
@@ -16,7 +17,7 @@ public sealed partial class WorkspaceView
             var content = Ui.Stack(Ui.Label("方案 · " + Ui.Status(proposal.Text("status")), 20), Ui.Label(proposal.Text("createdAt")));
             var payload = proposal?["payload"]?.DeepClone() as JsonObject ?? new JsonObject();
             var created = payload.Rows("tasks"); var choices = new[] { ("", "无父任务") }.Concat(created.Select(t => (t.Text("key"), t.Text("title")))).Concat(tasks.Select(t => (t.Text("taskId"), t.Text("title")))).ToList();
-            var parents = new List<(JsonNode Row, string Field, ComboBox Choice)>();
+            var parents = new List<(JsonNode Row, string Group, string Field, ComboBox Choice, string InitialParent)>();
             var editable = Can("taskManage") && proposal.Text("status") is "pending" or "stale" or "rejected";
             foreach (var (group, field) in new[] { ("tasks", "parent"), ("updates", "parentTaskId") }) foreach (var row in payload.Rows(group))
             {
@@ -29,7 +30,7 @@ public sealed partial class WorkspaceView
                 {
                     var ownId = group == "tasks" ? row.Text("key") : row.Text("taskId");
                     var picker = Ui.Choice("调整父任务", choices.Where(c => c.Item1 != ownId && (group == "tasks" || c.Item1.Length == 0 || tasks.Any(t => t.Text("taskId") == c.Item1))), currentParent);
-                    box.Children.Add(picker); parents.Add((row, field, picker));
+                    box.Children.Add(picker); parents.Add((row, group, field, picker, currentParent));
                 }
                 content.Children.Add(Ui.Card(box));
             }
@@ -39,8 +40,10 @@ public sealed partial class WorkspaceView
                 content.Children.Add(Action("保存层级修订", async () =>
                 {
                     if (string.IsNullOrWhiteSpace(reason.Text)) throw new InvalidOperationException("请填写修订理由。");
-                    foreach (var entry in parents) if (entry.Choice.Value() != entry.Row.Text(entry.Field)) entry.Row[entry.Field] = entry.Choice.Value().Length == 0 ? null : JsonValue.Create(entry.Choice.Value());
-                    await WriteAsync("PATCH", Base + "/collaboration/proposals/" + Escape(proposal.Text("proposalId")), new JsonObject { ["expectedRevision"] = proposal?["revision"].Copy(), ["payload"] = payload.DeepClone(), ["reason"] = reason.Text.Trim() });
+                    var submitted = (JsonObject)payload.DeepClone();
+                    foreach (var group in new[] { "tasks", "updates" }) if (payload[group] is JsonArray rows)
+                        submitted[group] = new JsonArray(rows.Select(row => { var entry = parents.FirstOrDefault(p => ReferenceEquals(p.Row, row)); return entry.Row == null ? row.Copy() : TaskProposalParent.Apply((JsonObject)entry.Row, entry.Field, entry.InitialParent, entry.Choice.Value()); }).ToArray());
+                    await WriteAsync("PATCH", Base + "/collaboration/proposals/" + Escape(proposal.Text("proposalId")), new JsonObject { ["expectedRevision"] = proposal?["revision"].Copy(), ["payload"] = submitted, ["reason"] = reason.Text.Trim() });
                     await ReplaceAsync(TaskHierarchyProposalsAsync);
                 }, "保存当前方案的父子层级修订？"));
             }
