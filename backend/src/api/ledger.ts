@@ -269,7 +269,7 @@ export function registerLedgerRoutes(app: OpenAPIHono<AppEnv>): void {
         standardsVersions: await Promise.all(standardRows.results.map(row => standardView(c.env, row))),
         assessments: [...await Promise.all(assessmentRows.results.map(row => assessmentView(c.env, row))), ...historicalAssessments],
         legacyReviews: legacyReviews.results.map(row => ({ reviewId: row.id, requirementSetId: row.requirement_set_id, rubricVersionId: row.rubric_version_id, materialVersionIds: JSON.parse(row.material_version_ids_json) as string[], status: row.status, report: row.report_json ? JSON.parse(row.report_json) as unknown : null, createdAt: row.created_at })),
-        taskDependencies,
+        taskDependencies:taskDependencies.map(({taskId,dependsOnTaskId})=>({taskId,dependsOnTaskId})),
         taskLinks: taskLinks.results.map(row => ({ linkId: row.id, taskId: row.task_id, kind: row.kind, targetId: row.target_id, createdAt: row.created_at })),
         taskSubmissions: submissionRows.results.map(row => ({ submissionId: row.id, taskId: row.task_id, round: row.round, submittedBy: row.submitted_by, body: row.body, criteria: row.criteria, status: row.status, materialVersionIds: JSON.parse(row.material_versions_json) as string[], aiReport: row.ai_report_json ? JSON.parse(row.ai_report_json) as unknown : null, humanScoreOverride: row.human_score_override_json ? JSON.parse(row.human_score_override_json) as unknown : null, decision: row.decision, feedback: row.feedback, createdAt: row.created_at })),
         sources: sourceRows.results.map(row => ({ sourceId: row.id, title: row.title, purpose: row.purpose, currentVersionId: row.current_version_id, deletedAt: row.deleted_at })),
