@@ -5862,6 +5862,8 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
+                        /** Format: uuid */
+                        parentTaskId?: string | null;
                         title: string;
                         /** @default  */
                         detail?: string;
@@ -5942,6 +5944,136 @@ export interface paths {
             };
         };
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/tasks/focus": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 个人重点任务 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskFocusResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/tasks/{taskId}/parent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    taskId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        parentTaskId: string | null;
+                        expectedGraphRevision: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description 父任务已更新 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskParentResponse"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/tasks/{taskId}/pin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 项目 ID */
+                    projectId: string;
+                    taskId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        pinned: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description 个人置顶已更新 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskPinResponse"];
+                    };
+                };
+            };
+        };
         post?: never;
         delete?: never;
         options?: never;
@@ -7418,6 +7550,7 @@ export interface paths {
                                 criteria: string;
                                 /** @default 1 */
                                 effortHours?: number;
+                                parent?: string | null;
                                 key?: string;
                                 dependsOn?: string[];
                                 citations?: {
@@ -7436,6 +7569,8 @@ export interface paths {
                                 criteria: string;
                                 /** @default 1 */
                                 effortHours?: number;
+                                /** Format: uuid */
+                                parentTaskId?: string | null;
                                 /** Format: uuid */
                                 taskId: string;
                                 expectedRevision: number;
@@ -16810,6 +16945,9 @@ export interface components {
         };
         TaskResponse: {
             data: {
+                /** Format: uuid */
+                parentTaskId: string | null;
+                manualDependsOnTaskIds: string[];
                 startedAt?: string | null;
                 archivedAt?: string | null;
                 pendingHumanReview?: boolean;
@@ -16850,6 +16988,9 @@ export interface components {
         TaskListResponse: {
             data: {
                 items: {
+                    /** Format: uuid */
+                    parentTaskId: string | null;
+                    manualDependsOnTaskIds: string[];
                     startedAt?: string | null;
                     archivedAt?: string | null;
                     pendingHumanReview?: boolean;
@@ -16893,6 +17034,9 @@ export interface components {
             data: {
                 items: {
                     /** Format: uuid */
+                    parentTaskId: string | null;
+                    manualDependsOnTaskIds: string[];
+                    /** Format: uuid */
                     taskId: string;
                     title: string;
                     detail: string;
@@ -16933,6 +17077,152 @@ export interface components {
                 graphRevision: number;
                 canRegenerate: boolean;
                 memberIds: string[];
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        TaskFocusResponse: {
+            data: {
+                items: {
+                    /** Format: uuid */
+                    parentTaskId: string | null;
+                    manualDependsOnTaskIds: string[];
+                    startedAt?: string | null;
+                    archivedAt?: string | null;
+                    pendingHumanReview?: boolean;
+                    /** Format: uuid */
+                    taskId: string;
+                    lifecycleState: string | null;
+                    criteria: string;
+                    effortHours: number;
+                    /** Format: uuid */
+                    currentSubmissionId: string | null;
+                    citations: unknown[];
+                    dependsOnTaskIds: string[];
+                    unfinishedDependencyIds: string[];
+                    title: string;
+                    detail: string;
+                    /** Format: uuid */
+                    assigneeId: string | null;
+                    dueDate: string | null;
+                    /** @enum {string} */
+                    duePrecision: "date" | "datetime" | "unknown";
+                    /** @enum {string} */
+                    status: "todo" | "doing" | "blocked" | "done";
+                    /** Format: uuid */
+                    requirementId: string | null;
+                    revision: number;
+                    createdAt: string;
+                    updatedAt: string;
+                    summary?: string;
+                    /** @enum {string} */
+                    summaryStatus?: "ready" | "missing" | "queued" | "running" | "failed" | "disabled";
+                    /** Format: uuid */
+                    summaryJobId?: string;
+                    summarySourceHash?: string;
+                    pinned: boolean;
+                    focusReasons: string[];
+                }[];
+                waitingReview: {
+                    /** Format: uuid */
+                    parentTaskId: string | null;
+                    manualDependsOnTaskIds: string[];
+                    startedAt?: string | null;
+                    archivedAt?: string | null;
+                    pendingHumanReview?: boolean;
+                    /** Format: uuid */
+                    taskId: string;
+                    lifecycleState: string | null;
+                    criteria: string;
+                    effortHours: number;
+                    /** Format: uuid */
+                    currentSubmissionId: string | null;
+                    citations: unknown[];
+                    dependsOnTaskIds: string[];
+                    unfinishedDependencyIds: string[];
+                    title: string;
+                    detail: string;
+                    /** Format: uuid */
+                    assigneeId: string | null;
+                    dueDate: string | null;
+                    /** @enum {string} */
+                    duePrecision: "date" | "datetime" | "unknown";
+                    /** @enum {string} */
+                    status: "todo" | "doing" | "blocked" | "done";
+                    /** Format: uuid */
+                    requirementId: string | null;
+                    revision: number;
+                    createdAt: string;
+                    updatedAt: string;
+                    summary?: string;
+                    /** @enum {string} */
+                    summaryStatus?: "ready" | "missing" | "queued" | "running" | "failed" | "disabled";
+                    /** Format: uuid */
+                    summaryJobId?: string;
+                    summarySourceHash?: string;
+                    pinned: boolean;
+                    focusReasons: string[];
+                }[];
+                reviewRequired: {
+                    /** Format: uuid */
+                    parentTaskId: string | null;
+                    manualDependsOnTaskIds: string[];
+                    startedAt?: string | null;
+                    archivedAt?: string | null;
+                    pendingHumanReview?: boolean;
+                    /** Format: uuid */
+                    taskId: string;
+                    lifecycleState: string | null;
+                    criteria: string;
+                    effortHours: number;
+                    /** Format: uuid */
+                    currentSubmissionId: string | null;
+                    citations: unknown[];
+                    dependsOnTaskIds: string[];
+                    unfinishedDependencyIds: string[];
+                    title: string;
+                    detail: string;
+                    /** Format: uuid */
+                    assigneeId: string | null;
+                    dueDate: string | null;
+                    /** @enum {string} */
+                    duePrecision: "date" | "datetime" | "unknown";
+                    /** @enum {string} */
+                    status: "todo" | "doing" | "blocked" | "done";
+                    /** Format: uuid */
+                    requirementId: string | null;
+                    revision: number;
+                    createdAt: string;
+                    updatedAt: string;
+                    summary?: string;
+                    /** @enum {string} */
+                    summaryStatus?: "ready" | "missing" | "queued" | "running" | "failed" | "disabled";
+                    /** Format: uuid */
+                    summaryJobId?: string;
+                    summarySourceHash?: string;
+                    pinned: boolean;
+                    focusReasons: string[];
+                }[];
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        TaskParentResponse: {
+            data: {
+                /** Format: uuid */
+                taskId: string;
+                /** Format: uuid */
+                parentTaskId: string | null;
+                graphRevision: number;
+            };
+            /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
+            requestId: string;
+        };
+        TaskPinResponse: {
+            data: {
+                /** Format: uuid */
+                taskId: string;
+                pinned: boolean;
             };
             /** @description 请求关联 ID，与响应头 X-Request-Id 一致 */
             requestId: string;
@@ -17105,6 +17395,9 @@ export interface components {
         CollaborationTaskListResponse: {
             data: {
                 items: {
+                    /** Format: uuid */
+                    parentTaskId: string | null;
+                    manualDependsOnTaskIds: string[];
                     pendingHumanReview?: boolean;
                     startedAt?: string | null;
                     archivedAt?: string | null;
@@ -17302,6 +17595,7 @@ export interface components {
                             criteria: string;
                             /** @default 1 */
                             effortHours: number;
+                            parent?: string | null;
                             key?: string;
                             dependsOn?: string[];
                             citations?: {
@@ -17320,6 +17614,8 @@ export interface components {
                             criteria: string;
                             /** @default 1 */
                             effortHours: number;
+                            /** Format: uuid */
+                            parentTaskId?: string | null;
                             /** Format: uuid */
                             taskId: string;
                             expectedRevision: number;
@@ -17405,6 +17701,9 @@ export interface components {
         };
         CollaborationTaskResponse: {
             data: {
+                /** Format: uuid */
+                parentTaskId: string | null;
+                manualDependsOnTaskIds: string[];
                 pendingHumanReview?: boolean;
                 startedAt?: string | null;
                 archivedAt?: string | null;
@@ -17606,6 +17905,7 @@ export interface components {
                         criteria: string;
                         /** @default 1 */
                         effortHours: number;
+                        parent?: string | null;
                         key?: string;
                         dependsOn?: string[];
                         citations?: {
@@ -17624,6 +17924,8 @@ export interface components {
                         criteria: string;
                         /** @default 1 */
                         effortHours: number;
+                        /** Format: uuid */
+                        parentTaskId?: string | null;
                         /** Format: uuid */
                         taskId: string;
                         expectedRevision: number;
@@ -19555,6 +19857,8 @@ export interface components {
                     createdAt: string;
                 }[];
                 tasks: {
+                    parentTaskId: string | null;
+                    manualDependsOnTaskIds: string[];
                     taskId: string;
                     title: string;
                     detail: string;

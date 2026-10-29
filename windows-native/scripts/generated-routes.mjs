@@ -371,7 +371,10 @@ export const routeFamilies = Object.freeze({
     "GET /api/v1/projects/{projectId}/tasks/{taskId}/files",
     "POST /api/v1/projects/{projectId}/tasks/{taskId}/files",
     "PUT /api/v1/projects/{projectId}/tasks/{taskId}/files/{materialId}",
+    "PUT /api/v1/projects/{projectId}/tasks/{taskId}/parent",
+    "PUT /api/v1/projects/{projectId}/tasks/{taskId}/pin",
     "POST /api/v1/projects/{projectId}/tasks/apply-assignment",
+    "GET /api/v1/projects/{projectId}/tasks/focus",
     "GET /api/v1/projects/{projectId}/tasks/graph"
   ]
 });

@@ -964,7 +964,7 @@ ApiError.message 直接取后端 message，兼容无错误码/请求编号的消
 <!-- help:database:start -->
 # 数据库完整结构字典
 
-本字典由 `scripts/update-handbook-schema.py` 在空的内存 SQLite 中重放 `backend/migrations/*.sql` 后生成，仅跳过演示数据 `0002_seed.sql`。当前包含 152 张表（含全文索引影子表）。它描述代码迁移后的目标结构，不代表生产数据库已经应用；不会读取或修改本机或生产数据。完整约束保留在 DDL，类型、非空、默认值、主键、外键和索引来自实际元数据。
+本字典由 `scripts/update-handbook-schema.py` 在空的内存 SQLite 中重放 `backend/migrations/*.sql` 后生成，仅跳过演示数据 `0002_seed.sql`。当前包含 153 张表（含全文索引影子表）。它描述代码迁移后的目标结构，不代表生产数据库已经应用；不会读取或修改本机或生产数据。完整约束保留在 DDL，类型、非空、默认值、主键、外键和索引来自实际元数据。
 
 AI 金额字段仅为历史结构兼容，不代表现行项目预算功能。ID/JSON/时间字段的业务校验仍以服务端契约为准。字典中的 DDL 仅供说明与空库校验，部署必须按原迁移顺序执行。
 
@@ -5766,6 +5766,8 @@ CREATE TABLE task_completion_people (
 | `task_id` | TEXT | 是 | 无 | 1 |
 | `depends_on_task_id` | TEXT | 是 | 无 | 2 |
 | `created_at` | TEXT | 是 | 无 | 否 |
+| `manual_origin` | INTEGER | 是 | 1 | 否 |
+| `hierarchy_origin` | INTEGER | 是 | 0 | 否 |
 
 外键：
 - `project_id` → `tasks.project_id`；ON UPDATE NO ACTION；ON DELETE CASCADE；复合关系 0/0；MATCH NONE。
@@ -5782,7 +5784,7 @@ CREATE TABLE task_completion_people (
 ```sql
 CREATE TABLE task_dependencies (
  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
- task_id TEXT NOT NULL, depends_on_task_id TEXT NOT NULL, created_at TEXT NOT NULL,
+ task_id TEXT NOT NULL, depends_on_task_id TEXT NOT NULL, created_at TEXT NOT NULL, manual_origin INTEGER NOT NULL DEFAULT 1 CHECK(manual_origin IN (0,1)), hierarchy_origin INTEGER NOT NULL DEFAULT 0 CHECK(hierarchy_origin IN (0,1)),
  PRIMARY KEY(task_id,depends_on_task_id), CHECK(task_id != depends_on_task_id),
  FOREIGN KEY(project_id,task_id) REFERENCES tasks(project_id,id) ON DELETE CASCADE,
  FOREIGN KEY(project_id,depends_on_task_id) REFERENCES tasks(project_id,id) ON DELETE CASCADE
@@ -5905,6 +5907,33 @@ CREATE TABLE task_links (
   target_id TEXT NOT NULL,
   created_at TEXT NOT NULL,
   UNIQUE (task_id, kind, target_id)
+);
+```
+
+## `task_pins`
+
+| 字段 | 类型 | NOT NULL | 默认值 | 主键顺序 |
+| --- | --- | --- | --- | --- |
+| `project_id` | TEXT | 是 | 无 | 1 |
+| `user_id` | TEXT | 是 | 无 | 2 |
+| `task_id` | TEXT | 是 | 无 | 3 |
+| `created_at` | TEXT | 是 | 无 | 否 |
+
+外键：
+- `task_id` → `tasks.id`；ON UPDATE NO ACTION；ON DELETE CASCADE；复合关系 0/0；MATCH NONE。
+- `user_id` → `users.id`；ON UPDATE NO ACTION；ON DELETE CASCADE；复合关系 1/0；MATCH NONE。
+- `project_id` → `projects.id`；ON UPDATE NO ACTION；ON DELETE CASCADE；复合关系 2/0；MATCH NONE。
+
+索引：
+- `sqlite_autoindex_task_pins_1`：`project_id, user_id, task_id`；唯一=1；来源=pk；部分索引=0。
+
+```sql
+CREATE TABLE task_pins (
+ project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+ user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+ task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+ created_at TEXT NOT NULL,
+ PRIMARY KEY(project_id,user_id,task_id)
 );
 ```
 
@@ -6041,14 +6070,17 @@ CREATE TABLE task_summaries (
 | `plan_proposal_id` | TEXT | 否 | 无 | 否 |
 | `started_at` | TEXT | 否 | 无 | 否 |
 | `archived_at` | TEXT | 否 | 无 | 否 |
+| `parent_task_id` | TEXT | 否 | 无 | 否 |
 
 外键：
-- `created_by` → `users.id`；ON UPDATE NO ACTION；ON DELETE NO ACTION；复合关系 0/0；MATCH NONE。
-- `requirement_id` → `requirements.id`；ON UPDATE NO ACTION；ON DELETE NO ACTION；复合关系 1/0；MATCH NONE。
-- `assignee_id` → `users.id`；ON UPDATE NO ACTION；ON DELETE NO ACTION；复合关系 2/0；MATCH NONE。
-- `project_id` → `projects.id`；ON UPDATE NO ACTION；ON DELETE CASCADE；复合关系 3/0；MATCH NONE。
+- `parent_task_id` → `tasks.id`；ON UPDATE NO ACTION；ON DELETE NO ACTION；复合关系 0/0；MATCH NONE。
+- `created_by` → `users.id`；ON UPDATE NO ACTION；ON DELETE NO ACTION；复合关系 1/0；MATCH NONE。
+- `requirement_id` → `requirements.id`；ON UPDATE NO ACTION；ON DELETE NO ACTION；复合关系 2/0；MATCH NONE。
+- `assignee_id` → `users.id`；ON UPDATE NO ACTION；ON DELETE NO ACTION；复合关系 3/0；MATCH NONE。
+- `project_id` → `projects.id`；ON UPDATE NO ACTION；ON DELETE CASCADE；复合关系 4/0；MATCH NONE。
 
 索引：
+- `idx_tasks_parent`：`project_id, parent_task_id`；唯一=0；来源=c；部分索引=0。
 - `idx_tasks_project_id`：`project_id, id`；唯一=1；来源=c；部分索引=0。
 - `idx_tasks_project`：`project_id, status`；唯一=0；来源=c；部分索引=0。
 - `sqlite_autoindex_tasks_1`：`id`；唯一=1；来源=pk；部分索引=0。
@@ -6068,7 +6100,8 @@ CREATE TABLE tasks (
   created_by TEXT NOT NULL REFERENCES users(id),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
-, lifecycle_state TEXT CHECK (lifecycle_state IN ('open','in_progress','submitted','accepted','improve','rework')), criteria TEXT NOT NULL DEFAULT '', current_submission_id TEXT, effort_hours REAL NOT NULL DEFAULT 1 CHECK(effort_hours > 0 AND effort_hours <= 200), source_citations_json TEXT NOT NULL DEFAULT '[]', plan_proposal_id TEXT, started_at TEXT, archived_at TEXT);
+, lifecycle_state TEXT CHECK (lifecycle_state IN ('open','in_progress','submitted','accepted','improve','rework')), criteria TEXT NOT NULL DEFAULT '', current_submission_id TEXT, effort_hours REAL NOT NULL DEFAULT 1 CHECK(effort_hours > 0 AND effort_hours <= 200), source_citations_json TEXT NOT NULL DEFAULT '[]', plan_proposal_id TEXT, started_at TEXT, archived_at TEXT, parent_task_id TEXT REFERENCES tasks(id));
+CREATE INDEX idx_tasks_parent ON tasks(project_id,parent_task_id);
 CREATE INDEX idx_tasks_project ON tasks (project_id, status);
 CREATE UNIQUE INDEX idx_tasks_project_id ON tasks(project_id,id);
 ```
@@ -6312,6 +6345,18 @@ CREATE TRIGGER task_completed_person AFTER UPDATE OF status ON tasks WHEN OLD.st
  INSERT INTO task_completion_people(task_id,user_id,completed_at)
  VALUES(NEW.id,COALESCE((SELECT submitted_by FROM task_submissions WHERE id=NEW.current_submission_id AND status='accept'),OLD.assignee_id),NEW.updated_at)
  ON CONFLICT(task_id) DO UPDATE SET user_id=excluded.user_id,completed_at=excluded.completed_at;
+END;
+CREATE TRIGGER task_parent_insert AFTER INSERT ON tasks WHEN NEW.parent_task_id IS NOT NULL BEGIN
+ INSERT INTO task_dependencies(project_id,task_id,depends_on_task_id,created_at,manual_origin,hierarchy_origin)
+ VALUES(NEW.project_id,NEW.parent_task_id,NEW.id,NEW.updated_at,0,1)
+ ON CONFLICT(task_id,depends_on_task_id) DO UPDATE SET hierarchy_origin=1;
+END;
+CREATE TRIGGER task_parent_update AFTER UPDATE OF parent_task_id ON tasks WHEN OLD.parent_task_id IS NOT NEW.parent_task_id BEGIN
+ DELETE FROM task_dependencies WHERE project_id=NEW.project_id AND task_id=OLD.parent_task_id AND depends_on_task_id=NEW.id AND manual_origin=0;
+ UPDATE task_dependencies SET hierarchy_origin=0 WHERE project_id=NEW.project_id AND task_id=OLD.parent_task_id AND depends_on_task_id=NEW.id;
+ INSERT INTO task_dependencies(project_id,task_id,depends_on_task_id,created_at,manual_origin,hierarchy_origin)
+ SELECT NEW.project_id,NEW.parent_task_id,NEW.id,NEW.updated_at,0,1 WHERE NEW.parent_task_id IS NOT NULL
+ ON CONFLICT(task_id,depends_on_task_id) DO UPDATE SET hierarchy_origin=1;
 END;
 CREATE TRIGGER task_readiness_changed AFTER UPDATE OF status,assignee_id ON tasks BEGIN
  -- Changing who owns a task establishes a new baseline, without notifying on claim.

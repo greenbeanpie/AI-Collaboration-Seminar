@@ -3338,6 +3338,30 @@
       ]
     },
     {
+      "method": "PUT",
+      "path": "/api/v1/projects/{projectId}/tasks/{taskId}/parent",
+      "family": "tasks",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/projects/{projectId}/tasks/{taskId}/pin",
+      "family": "tasks",
+      "summary": "",
+      "requestContentTypes": [
+        "application/json"
+      ],
+      "responseStatuses": [
+        "200"
+      ]
+    },
+    {
       "method": "POST",
       "path": "/api/v1/projects/{projectId}/tasks/{taskId}/reopen",
       "family": "collaboration",
@@ -3396,6 +3420,16 @@
         "400",
         "404",
         "409"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{projectId}/tasks/focus",
+      "family": "tasks",
+      "summary": "",
+      "requestContentTypes": [],
+      "responseStatuses": [
+        "200"
       ]
     },
     {
