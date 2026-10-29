@@ -6,8 +6,8 @@ import { projectRequest, type ProjectGoal } from '../api/simplification';
 import { Field, Modal } from '../components/ui';
 import { mergeFields } from './task-settings-merge';
 
-type Draft = { title: string; detail: string; criteria: string; effortHours: string; assigneeId: string; dependencies: string[] };
-const draftOf = (task: CollaborationTask): Draft => ({ title: task.title, detail: task.detail, criteria: task.criteria, effortHours: String(task.effortHours), assigneeId: task.assigneeId ?? '', dependencies: [...(task.dependsOnTaskIds ?? [])].sort() });
+type Draft = { title: string; detail: string; criteria: string; effortHours: string; assigneeId: string; dependencies: string[]; parentTaskId: string };
+const draftOf = (task: CollaborationTask): Draft => ({ title: task.title, detail: task.detail, criteria: task.criteria, effortHours: String(task.effortHours), assigneeId: task.assigneeId ?? '', dependencies: [...(task.manualDependsOnTaskIds ?? task.dependsOnTaskIds ?? [])].sort(), parentTaskId: task.parentTaskId ?? '' });
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 export type SettingsCloseGuard = RefObject<(() => Promise<boolean>) | null>;
 
@@ -66,6 +66,12 @@ export function TaskSettings({ projectId, task, tasks, graphRevision, canManage,
                 current.base[key] = normalized;
                 if (current.draft[key] === submitted[key]) current.draft[key] = normalized;
               }
+            }
+            if (submitted.parentTaskId !== base.parentTaskId) {
+              if (current.graphRevision === undefined) throw new Error('任务关系尚未加载，请稍后重试。');
+              const saved = await projectRequest<{ graphRevision: number }>(projectId, `/tasks/${task.taskId}/parent`, { method: 'PUT', body: { expectedGraphRevision: current.graphRevision, parentTaskId: submitted.parentTaskId || null } });
+              current.graphRevision = saved.graphRevision; current.base.parentTaskId = submitted.parentTaskId;
+              current.task = await projectRequest<CollaborationTask>(projectId, `/tasks/${task.taskId}`, { networkOnly: true });
             }
             if (!equal(submitted.dependencies, base.dependencies)) {
               if (current.graphRevision === undefined) throw new Error('依赖图尚未加载，请稍后重试。');
@@ -138,7 +144,9 @@ export function TaskSettings({ projectId, task, tasks, graphRevision, canManage,
     <div className="task-settings-title-row"><Field aiReference label="任务名称">{editable ? <input className="input" maxLength={200} value={draft.title} onChange={event => update({ title: event.target.value })}/> : <p>{draft.title}</p>}</Field><Field aiReference label="预计投入（小时）">{editable ? <input className="input" type="number" min="0.25" max="200" step="0.25" value={draft.effortHours} onChange={event => update({ effortHours: event.target.value })}/> : <p>{draft.effortHours}</p>}</Field></div>
     <Field aiReference label="任务说明">{editable ? <textarea className="input" rows={3} maxLength={4000} value={draft.detail} onChange={event => update({ detail: event.target.value })}/> : <p className="collab-preserve">{draft.detail || '暂无任务说明'}</p>}</Field>
     <Field aiReference label="验收标准">{editable ? <textarea className="input" rows={4} maxLength={4000} value={draft.criteria} onChange={event => update({ criteria: event.target.value })}/> : <p className="collab-preserve">{draft.criteria}</p>}</Field>
+    <Field label="父任务" hint="父任务自动依赖本任务，仍可提前执行和提交。"><select className="input" disabled={!canManage || saving} value={draft.parentTaskId} onChange={event => update({ parentTaskId: event.target.value })}><option value="">无父任务</option>{tasks.filter(item => item.taskId !== task.taskId).map(item => <option key={item.taskId} value={item.taskId}>{item.title}</option>)}</select></Field>
     <div className="task-settings-heading"><h3>前置依赖<AiReferenceBadge ariaHidden /></h3>{canManage && <button className="button button-quiet button-small" onClick={() => { setSearch(''); setDependenciesOpen(true); }}>修改前置任务</button>}</div>
+    <p className="form-note">此处修改人工依赖；子任务产生的依赖由父子关系自动维护。</p>
     <p>{tasks.filter(item => draft.dependencies.includes(item.taskId)).map(item => item.title).join('、') || '无前置任务'}</p>
     {!!task.unfinishedDependencyIds?.length && <p className="notice notice-warn">尚有未完成的前置任务；可以提前认领、执行和提交。</p>}
     <div className="task-settings-heading"><h3>安排分工<AiReferenceBadge ariaHidden /></h3>{canManage && <button className="button button-quiet button-small" onClick={() => setAssignmentEditing(value => !value)}>修改分工</button>}</div>
@@ -146,7 +154,7 @@ export function TaskSettings({ projectId, task, tasks, graphRevision, canManage,
     {!!task.citations?.length && <section><h3>任务来源原文依据<AiReferenceBadge ariaHidden /></h3>{task.citations.map((citation, index) => <p className="collab-preserve" key={index}>固定来源 {citation.sourceVersionId}{citation.pageNumber ? ` · 第${citation.pageNumber}页` : ''}：{citation.quote}{citation.availability === 'unavailable' && <small> · 原始来源不可用，历史引文保留</small>}</p>)}</section>}
     </div>
     {(notice || saving) && <p role="status">{saving ? '保存中…' : notice}</p>}
-    {!!conflicts.length && <div className="notice notice-warn"><p>存在冲突的字段：{conflicts.map(key => ({ title: '任务名称', detail: '任务说明', criteria: '验收标准', effortHours: '预计投入', assigneeId: '任务执行人', dependencies: '前置依赖' })[key as keyof Draft]).join('、')}</p><p>最新内容：{conflicts.map(key => { const value = live.current.base[key as keyof Draft]; return Array.isArray(value) ? tasks.filter(item => value.includes(item.taskId)).map(item => item.title).join('、') : String(value); }).join('；')}</p><button className="button" onClick={() => resolve(true)}>保留我的修改</button><button className="button button-quiet" onClick={() => resolve(false)}>使用最新内容</button></div>}
+    {!!conflicts.length && <div className="notice notice-warn"><p>存在冲突的字段：{conflicts.map(key => ({ title: '任务名称', detail: '任务说明', criteria: '验收标准', effortHours: '预计投入', assigneeId: '任务执行人', dependencies: '前置依赖', parentTaskId: '父任务' })[key as keyof Draft]).join('、')}</p><p>最新内容：{conflicts.map(key => { const value = live.current.base[key as keyof Draft]; return Array.isArray(value) ? tasks.filter(item => value.includes(item.taskId)).map(item => item.title).join('、') : String(value); }).join('；')}</p><button className="button" onClick={() => resolve(true)}>保留我的修改</button><button className="button button-quiet" onClick={() => resolve(false)}>使用最新内容</button></div>}
     {!!notice && !conflicts.length && blocked.current && <button className="button button-quiet" onClick={() => { blocked.current = false; void flush(); }}>重试</button>}
     {dependenciesOpen && <Modal title={`前置任务·${task.title}`} onClose={async () => { if (await flush()) setDependenciesOpen(false); }}><Field label="搜索任务"><input className="input" value={search} onChange={event => setSearch(event.target.value)}/></Field><fieldset><legend>选择前置任务<AiReferenceBadge ariaHidden /></legend>{tasks.filter(item => item.taskId !== task.taskId && item.title.toLocaleLowerCase().includes(search.toLocaleLowerCase())).map(item => <label className="collab-version" key={item.taskId}><input type="checkbox" checked={draft.dependencies.includes(item.taskId)} onChange={event => update({ dependencies: (event.target.checked ? [...draft.dependencies, item.taskId] : draft.dependencies.filter(id => id !== item.taskId)).sort() })}/>{item.title}</label>)}</fieldset></Modal>}
     {statusOpen && <Modal title={`更新任务状态·${task.title}`} onClose={() => setStatusOpen(false)}>{!task.assigneeId && task.lifecycleState === 'open' && meId && <button className="button" disabled={saving} onClick={() => void statusAction('claim')}>我来认领</button>}{canManage && task.lifecycleState === 'accepted' && <><Field aiReference label="重新打开理由"><textarea className="input" maxLength={4000} value={statusReason} onChange={event => setStatusReason(event.target.value)}/></Field><button className="button" disabled={saving || !statusReason.trim()} onClick={() => void statusAction('reopen')}>重新打开任务</button></>}{statusContent}</Modal>}

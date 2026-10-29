@@ -97,3 +97,19 @@ describe('task settings autosave', () => {
     expect(screen.getAllByRole('checkbox')).toHaveLength(1);
   });
 });
+
+
+it('saves parent changes against the graph revision and retains manual dependencies', async () => {
+  setup();
+  vi.mocked(projectRequest).mockImplementation(async (_id, path) => path.endsWith('/parent') ? { taskId: 't1', parentTaskId: 't2', graphRevision: 10 } : { ...task, parentTaskId: 't2' });
+  fireEvent.change(screen.getByRole('combobox', { name: /父任务/ }), { target: { value: 't2' } });
+  await idle();
+  expect(projectRequest).toHaveBeenCalledWith('p1', '/tasks/t1/parent', { method: 'PUT', body: { expectedGraphRevision: 9, parentTaskId: 't2' } });
+  expect(vi.mocked(projectRequest).mock.calls.some(([, path]) => path.endsWith('/dependencies'))).toBe(false);
+});
+
+it('does not convert inherited child dependencies into manually selected dependencies', () => {
+  render(<Fixture current={{ ...task, dependsOnTaskIds: ['t2'], manualDependsOnTaskIds: [], parentTaskId: null }} />);
+  fireEvent.click(screen.getByRole('button', { name: '修改前置任务' }));
+  expect(screen.getByRole('checkbox', { name: '前置乙' })).not.toBeChecked();
+});

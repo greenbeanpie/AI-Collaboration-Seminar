@@ -12,6 +12,7 @@ const task = { pendingHumanReview: false, startedAt: null as string | null, depe
 const submission = { submissionId: 's1', taskId: 't1', round: 1, submittedBy: 'm1', body: '已完成三个页面', materialVersionIds: ['v1'], criteria: '完成三个可操作页面', status: 'pending', decision: null, aiDecision: null, aiFeedback: null, feedback: null, revision: 2, createdAt: '2026-10-01T00:00:00Z' };
 function setup({ tasks = [task], submissions = [] as unknown[], proposals = [] as unknown[], component = 'workspace', entries = ['/tasks'] } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } } });
+  client.setQueryData(['task-focus', 'p1'], { items: [], waitingReview: [], reviewRequired: [] });
   client.setQueryData(['project-feedback', 'p1'], {versionId:null,version:0,feedback:'',actorId:null,createdAt:null});
   client.setQueryData(['project-feedback-history','p1'],{items:[]});
   client.setQueryData(['project-assistant-sources', 'p1'], []);
@@ -139,7 +140,7 @@ describe('collaboration lifecycle', () => {
     expect(screen.queryByText(/本轮 AI 评价已达/)).toBeNull();
     expect(screen.getByRole('button', { name: '确认验收决定' })).toBeInTheDocument();
   });
-  it('uses task terminology and keeps task settings free of retired hierarchy controls', () => {
+  it('uses task terminology and exposes current parent controls separately from dependencies', () => {
     setup({ tasks: [task, { ...task, taskId: 't2', title: '整理依据', dependsOnTaskIds: ['t1'] }] });
     expect(screen.getByRole('heading', { name: '任务' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '新建任务' })).toBeInTheDocument();
@@ -229,7 +230,8 @@ describe('collaboration lifecycle', () => {
     expect(view.container.querySelector('.collab-task > p.notice')).toBeNull();
     expect(view.container.querySelectorAll('.collab-task-footer')).toHaveLength(2);
     fireEvent.change(screen.getByLabelText('筛选'), { target: { value: 'open' } });
-    expect(screen.queryByRole('button', { name: '交付原型' })).toBeNull();
+    expect(view.container.querySelectorAll('.collab-task')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: '交付原型' })).toHaveClass('task-relation-link');
     expect(screen.getByRole('button', { name: '待采集' })).toBeInTheDocument();
   });
   it('shows task settings sections and puts the prerequisite action after its heading', () => {

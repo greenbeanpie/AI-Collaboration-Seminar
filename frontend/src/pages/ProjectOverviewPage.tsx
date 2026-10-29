@@ -1,7 +1,8 @@
 import { ProjectAiChat } from '../components/ProjectAiChat';
 import { completeTaskGraph } from '../features/pagination/taskGraph';
-import { useSession } from '../auth';
-import { PendingTaskPreview } from '../components/PendingTaskPreview';
+
+import { TaskFocus } from '../features/collaboration/TaskFocus';
+import './CollaborationWorkspace.css';
 import { TaskCompletionMetric } from '../components/TaskCompletionMetric';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
@@ -14,7 +15,6 @@ import './ProjectWorkspace.css';
 import { ErrorNotice, EmptyState, SectionCard, Spinner } from '../components/ui';
 
 export function ProjectOverviewPage() {
-  const session = useSession();
   const { projectId, project } = useProject();
   const goal = useQuery({ queryKey: ['project-goal', projectId], queryFn: () => projectRequest<ProjectGoal>(projectId, '/goal') });
   // 审批队列由 teamManage 决定；无该权限时列表接口只返回本人申请，故无需请求。
@@ -43,10 +43,10 @@ export function ProjectOverviewPage() {
     <div className="metric-grid overview-metrics">
       <TaskCompletionMetric variant="overview" completed={done} total={taskItems.length} available={tasks.data !== undefined && !tasks.error} unavailableMessage={tasks.error ? '任务统计暂不可用' : '正在读取任务进度'} />
     </div>
-    <SectionCard title="待处理事项" detail="最新两项未完成任务，优先显示由你负责的任务。">
+    <SectionCard title="待处理事项" detail="按当前需要处理的事项排列。">
       <div className="card-list">
         {pendingInvitations > 0 && <Link className="list-row attention-row" to={`/app/projects/${projectId}/team`}><span className="attention-mark">{pendingInvitations}</span><span className="list-row-main"><strong>有成员邀请等待批准</strong><p>在团队管理中核对申请，批准后才发送邀请。</p></span><ArrowRight size={15} /></Link>}
-        {!tasks.error && <PendingTaskPreview tasks={taskItems} userId={session.data?.id} projectId={projectId} />}
+        {!tasks.error && <TaskFocus projectId={projectId} compact />}
         {missingDeadline && <Link className="list-row attention-row" to={`/app/projects/${projectId}/settings`}><span className="attention-mark">!</span><span className="list-row-main"><strong>截止日期尚未确认</strong><p>项目设置中可记录官方通知中的日期精度。</p></span><ArrowRight size={15} /></Link>}
         {sources.data?.length === 0 && <Link className="list-row attention-row" to={`/app/projects/${projectId}/data?mode=import`}><span className="attention-mark">+</span><span className="list-row-main"><strong>导入通知或项目资料</strong><p>粘贴原文、填写公开网址或上传文件后再提取要求。</p></span><ArrowRight size={15} /></Link>}
         {draftSets !== undefined && draftSets > 0 && <Link className="list-row attention-row" to={`/app/projects/${projectId}/assessment?section=standards`}><span className="attention-mark">{draftSets}</span><span className="list-row-main"><strong>有要求等待纳入统一标准</strong><p>在同一编辑器复核要求与评分维度，确认后固定标准版本。</p></span><ArrowRight size={15} /></Link>}

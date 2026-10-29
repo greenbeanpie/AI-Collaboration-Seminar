@@ -9,7 +9,7 @@ import type { FeedbackSnapshot } from './labels';
 export function useCollaborationQueries(projectId: string) {
   const feedback = useQuery({ queryKey: ['project-feedback', projectId], queryFn: () => projectRequest<FeedbackSnapshot>(projectId, '/collaboration/feedback/current') });
   const feedbackHistory = useQuery({ queryKey: ['project-feedback-history', projectId], queryFn: () => projectRequest<{ items: FeedbackSnapshot[] }>(projectId, '/collaboration/feedback/history') });
-  const graph = useQuery({ queryKey: ['task-graph', projectId], queryFn: () => collaborationApi.graph(projectId) });
+  const graph = useQuery({ queryKey: ['task-graph', projectId], queryFn: () => collaborationApi.graph(projectId), refetchInterval: 30_000 });
   const goal = useQuery({ queryKey: ['project-goal', projectId], queryFn: () => projectRequest<ProjectGoal>(projectId, '/goal') });
   const settings = useQuery({ queryKey: ['collaboration-settings', projectId], queryFn: () => collaborationApi.settings(projectId) });
   const members = usePagedItems<'MemberListResponse'>({ queryKey: ['members', projectId], path: projectPath(projectId, '/members'), searchable: true });

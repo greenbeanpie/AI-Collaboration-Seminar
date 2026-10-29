@@ -7,8 +7,10 @@ export function ProposalPreview({ payload, members, tasks }: { payload: Record<s
   return <>{goal && <div className="callout"><strong>建议主目标：{goal.title}<AiReferenceBadge ariaHidden /></strong><p>{goal.detail}</p></div>}<ul>{entries.map((entry: unknown, index) => {
     if (!entry || typeof entry !== 'object') return null;
     const row = entry as Record<string, unknown>;
+    const parent = row.parent ?? row.parentTaskId;
+    const parentTitle = typeof parent === 'string' ? (entries.find(item => item && typeof item === 'object' && 'key' in item && item.key === parent) as { title?: string } | undefined)?.title ?? tasks.find(task => task.taskId === parent)?.title ?? parent : null;
     return <li key={index}><AiReferenceBadge /><strong>{typeof row.title === 'string' ? row.title : tasks.find(task => task.taskId === row.taskId)?.title ?? String(row.taskId ?? '任务')}</strong>{typeof row.criteria === 'string' &&
-      <p>{row.criteria}</p>}{Array.isArray(row.dependsOn) && row.dependsOn.length > 0 && <p>前置：{row.dependsOn.map(key => { const predecessor = entries.find(item => item &&
+      <p>{row.criteria}</p>}{parentTitle && <p>父任务：{parentTitle}（自动依赖此子任务）</p>}{Array.isArray(row.dependsOn) && row.dependsOn.length > 0 && <p>前置：{row.dependsOn.map(key => { const predecessor = entries.find(item => item &&
       typeof item === 'object' && 'key' in item && item.key === key) as { title?: string } | undefined;
       return predecessor?.title ?? tasks.find(task => task.taskId === key)?.title ?? String(key); }).join('、')}</p>}{typeof row.effortHours === 'number' &&
       <small>预计 {row.effortHours} 小时 · </small>}{typeof row.assigneeId === 'string' && <span>{members.find(member => member.userId === row.assigneeId)?.displayName ?? row.assigneeId}</span>}{typeof row.reason === 'string' &&

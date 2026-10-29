@@ -18,6 +18,7 @@ function showOverview(sources: unknown[], options: { tasks?: Task[]; loading?: b
   for (const key of ['members', 'materials', 'requirementSets']) client.setQueryData([key, 'overview-project'], []);
   if (!options.loading) client.setQueryData(['tasks', 'overview-project'], options.tasks ?? []);
   if (options.error) client.getQueryCache().find({ queryKey: ['tasks', 'overview-project'] })!.setState({ status: 'error', error: new Error('任务读取失败') });
+  client.setQueryData(['task-focus', 'overview-project'], { items: [], waitingReview: [], reviewRequired: [] });
   client.setQueryData(['sources', 'overview-project'], sources);
   client.setQueryData(['project-goal', 'overview-project'], { title: '真实主目标', detail: '' });
   const view = render(<QueryClientProvider client={client}><MemoryRouter><ProjectOverviewPage /></MemoryRouter></QueryClientProvider>);

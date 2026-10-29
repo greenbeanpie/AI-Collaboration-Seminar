@@ -5,10 +5,11 @@ import { idempotencyKeyForIntent, completeIntent } from '../pages/aiWorkflowSupp
 import { projectRequest } from './simplification';
 
 export type CollaborationSettingsData = DataOf<'CollaborationSettingsResponse'> & { planningMode?: 'manual' | 'automatic'; progressionMode?: 'manual' | 'automatic' };
-export type TaskGraph = { items: Array<Pick<CollaborationTask, 'taskId' | 'title' | 'status' | 'lifecycleState' | 'assigneeId' | 'revision' | 'dependsOnTaskIds' | 'unfinishedDependencyIds'>>; graphRevision: number; canRegenerate: boolean; totals: { total: number; todo: number; doing: number; blocked: number; done: number } };
+export type TaskGraph = { items: CollaborationTask[]; graphRevision: number; canRegenerate: boolean; totals: { total: number; todo: number; doing: number; blocked: number; done: number } };
 export type CollaborationMode = CollaborationSettingsData['assignmentMode'];
 export type TaskSummary = DataOf<'CollaborationTaskSummaryResponse'>;
-export type CollaborationTask = DataOf<'CollaborationTaskResponse'> & Pick<DataOf<'TaskResponse'>, 'dependsOnTaskIds' | 'unfinishedDependencyIds' | 'status'>;
+export type TaskHierarchy = { parentTaskId?: string | null; manualDependsOnTaskIds?: string[] };
+export type CollaborationTask = TaskHierarchy & DataOf<'CollaborationTaskResponse'> & Pick<DataOf<'TaskResponse'>, 'dependsOnTaskIds' | 'unfinishedDependencyIds' | 'status'>;
 export type LifecycleState = CollaborationTask['lifecycleState'];
 export type TaskSubmission = DataOf<'CollaborationSubmissionResponse'>;
 export type SubmissionDecision = NonNullable<TaskSubmission['decision']>;
@@ -31,9 +32,9 @@ export const collaborationApi = {
     const page = await request<'CollaborationTaskListResponse'>(projectPath(id, '/tasks'), { query: { limit: 50, ...query }, networkOnly, offlineReadFallback, signal });
     return requireCursor(page) as { items: CollaborationTask[]; nextCursor?: string | null };
   },
-  graph: (id: string) => projectRequest<TaskGraph>(id, '/tasks/graph'),
+  graph: (id: string) => projectRequest<TaskGraph>(id, '/tasks/graph', { networkOnly: navigator.onLine !== false, offlineReadFallback: true }),
   summary: (id: string, taskId: string, retry = false) => projectRequest<TaskSummary>(id, `/collaboration/tasks/${encodeURIComponent(taskId)}/summary`, { method: 'POST', body: retry ? { retry: true } : {} }),
-  createTask: (id: string, body: { title: string; detail: string; criteria: string; effortHours: number; dependsOnTaskIds: string[]; expectedGraphRevision: number; dueDate?: string | null; assigneeId?: string | null }) => taskPost<CollaborationTask>(id, '/tasks', body),
+  createTask: (id: string, body: { title: string; detail: string; criteria: string; effortHours: number; dependsOnTaskIds: string[]; expectedGraphRevision: number; dueDate?: string | null; assigneeId?: string | null; parentTaskId?: string | null }) => taskPost<CollaborationTask>(id, '/tasks', body),
   updateTask: (id: string, task: CollaborationTask, fields: { title: string; detail: string; criteria: string; effortHours: number }) => projectRequest<CollaborationTask>(id, `/tasks/${encodeURIComponent(task.taskId)}`, { method: 'PATCH', body: { expectedRevision: task.revision, ...fields } }),
   claim: (id: string, task: CollaborationTask) => taskPost<CollaborationTask>(id, `/tasks/${encodeURIComponent(task.taskId)}/claim`, { expectedRevision: task.revision }),
   assign: (id: string, task: CollaborationTask, assigneeId: string | null, reason: string) => taskPost<CollaborationTask>(id, `/tasks/${encodeURIComponent(task.taskId)}/assign`, { expectedRevision: task.revision, assigneeId, reason }),
