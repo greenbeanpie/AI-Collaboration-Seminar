@@ -10,7 +10,9 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
-import androidx.test.espresso.Espresso.closeSoftKeyboard
+import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
+import androidx.test.runner.lifecycle.Stage
+import android.view.inputmethod.InputMethodManager
 import cn.buwei.nativeapp.NativeTheme
 import cn.buwei.nativeapp.data.ClientRepository
 import kotlinx.coroutines.runBlocking
@@ -73,6 +75,16 @@ class TaskWorkspaceTest {
  private fun showTasks(){compose.setContent{NativeTheme{Surface(Modifier.fillMaxSize()){TaskWorkspace(repository,project)}}}}
  private fun await(text:String){compose.waitUntil(15000){compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()}}
  private fun click(text:String){await(text);compose.onNode(hasText(text) and hasClickAction()).performScrollTo().performClick()}
+ private fun closeSoftKeyboard(){
+  // API 37 can transfer window focus to the IME; Espresso's root-focus gate
+  // then fails before it can dismiss the keyboard. Use the resumed activity token.
+  InstrumentationRegistry.getInstrumentation().runOnMainSync {
+   ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).forEach{activity->
+    activity.getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(activity.window.decorView.windowToken,0)
+   }
+  }
+  compose.waitForIdle()
+ }
  private fun screenshot(name:String){val image=compose.onRoot().captureToImage().asAndroidBitmap();val file=File(context.getExternalFilesDir(null),"task-team-fixtures/$name.png");file.parentFile!!.mkdirs();file.outputStream().use{image.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)}}
  @Test fun claimUsesCurrentTaskRevisionAndRefreshesAssignee(){showTasks();click("查看与处理");click("领取任务");compose.waitUntil(10000){received.get()?.get("expectedRevision")?.jsonPrimitive?.int==7};assertEquals("tasks/$task/claim",calls.last().second.twText("tail"));compose.waitUntil{revision==8};screenshot("task-claim")}
  @Test fun filtersUseCompleteGraphWithoutDroppingAncestorContext(){showTasks();click("任务状态：全部");click("待验收");await("当前筛选下没有任务");compose.onNodeWithText("只看分配给我的任务").assertExists();assertTrue(queryPaths.any{it.endsWith("/tasks/graph")});assertTrue(queryPaths.none{it.contains("status=submitted")})}
