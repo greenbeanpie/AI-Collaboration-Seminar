@@ -37,9 +37,7 @@ public sealed partial class WorkspaceView
         var done = tasks.Count(x => x.Text("status") == "done");
         panel.Children.Add(Ui.Card(Ui.Label("项目主目标", 20), Ui.Label(goal.Text("title"), 18), Ui.Label(goal.Text("detail")), Ui.Label("目标版本 " + goal.Text("revision"))));
         panel.Children.Add(Ui.Card(Ui.Label("任务进度", 20), Ui.Label($"已完成 {done} / {tasks.Count} 项"), new ProgressBar { Minimum = 0, Maximum = Math.Max(tasks.Count, 1), Value = done }, Action("查看任务", () => NavigateAsync("tasks"))));
-        panel.Children.Add(Ui.Label("待处理事项", 20));
-        foreach (var task in tasks.Where(x => x.Text("status") != "done").OrderByDescending(x => x.Text("assigneeId") == repository.AccountId).Take(8))
-            panel.Children.Add(Ui.Card(Ui.Label(task.Text("title"), 18), Ui.Label(Ui.Status(task.Text("lifecycleState"))), Action("查看与处理", () => ReplaceAsync(ct => TaskDetailAsync(task.Text("taskId"), ct)))));
+        await AddTaskFocusAsync(panel, token);
         return panel;
     }
     private async Task<UIElement> CreateProjectAsync(CancellationToken token)

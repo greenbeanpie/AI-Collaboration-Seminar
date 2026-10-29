@@ -12,16 +12,37 @@ public sealed partial class WorkspaceView
         var panel = Page("任务协作", "前置依赖用于提示，可以提前领取、执行和提交。权限由当前项目成员身份决定。");
         var graph = await repository.GetAsync(Base + "/tasks/graph", token);
         if (Can("taskManage")) panel.Children.Add(Action("新建任务", () => ReplaceAsync(ct => TaskEditorAsync(null, graph, ct)), primary: true));
+        panel.Children.Add(Action("AI 建议与历史", () => ReplaceAsync(TaskHierarchyProposalsAsync)));
+        await AddTaskFocusAsync(panel, token);
         var query = Ui.Field("搜索任务", max: 200);
         var filter = Ui.Choice("任务状态", [("", "全部"), ("open", "待领取"), ("in_progress", "执行中"), ("submitted", "待验收"), ("accepted", "已完成"), ("improve", "需改进"), ("rework", "需重做")]);
         var mine = new CheckBox { Content = "只看分配给我的任务" }; var records = Ui.Stack();
-        async Task SearchAsync()
+        var collapsed = new HashSet<string>(); var tasks = graph.Rows();
+        void Render()
         {
-            records.Children.Clear();
-            var path = Base + "/tasks?limit=50&q=" + Escape(query.Text.Trim()) + (filter.Value().Length > 0 ? "&lifecycleState=" + filter.Value() : "") + (mine.IsChecked == true ? "&assigneeId=" + Escape(repository.AccountId!) : "");
-            await AddPagedAsync(records, path, task => Ui.Card(Ui.Label(task.Text("title"), 20), Ui.Label(Ui.Status(task.Text("lifecycleState"))), Ui.Label("截止 " + (task.Text("dueDate") is { Length: > 0 } due ? due : "待确认")), Action("查看与处理", () => ReplaceAsync(ct => TaskDetailAsync(task.Text("taskId"), ct)))), token, virtualize: true);
+            records.Children.Clear(); var filtered = query.Text.Trim().Length > 0 || filter.Value().Length > 0 || mine.IsChecked == true;
+            var matches = tasks.Where(t => (query.Text.Trim().Length == 0 || (t.Text("title") + " " + t.Text("detail")).Contains(query.Text.Trim(), StringComparison.OrdinalIgnoreCase)) && (filter.Value().Length == 0 || t.Text("lifecycleState") == filter.Value()) && (mine.IsChecked != true || t.Text("assigneeId") == repository.AccountId)).Select(t => t.Text("taskId")).ToHashSet();
+            var visible = new HashSet<string>(matches);
+            foreach (var task in tasks.Where(t => matches.Contains(t.Text("taskId")))) foreach (var parent in TaskAncestors(task, tasks)) visible.Add(parent.Text("taskId"));
+            var seen = new HashSet<string>();
+            void Add(JsonNode task, int depth)
+            {
+                var id = task.Text("taskId"); if (!visible.Contains(id) || !seen.Add(id)) return;
+                var children = tasks.Where(t => t.Text("parentTaskId") == id).ToList();
+                var content = Ui.Stack(Ui.Label(task.Text("title"), 20), Ui.Label(Ui.Status(task.Text("lifecycleState"))), Ui.Label("截止 " + (task.Text("dueDate") is { Length: > 0 } due ? due : "待确认")));
+                if (!matches.Contains(id)) content.Children.Add(Ui.Label("父任务上下文 · 不符合当前筛选"));
+                AddTaskRelations(content, task, tasks, false);
+                if (children.Count > 0) { content.Children.Add(Ui.Label($"子任务：已完成 {children.Count(t => t.Text("status") == "done")} / {children.Count}")); if (!filtered) content.Children.Add(Action(collapsed.Contains(id) ? "展开子任务" : "收起子任务", () => { if (!collapsed.Add(id)) collapsed.Remove(id); Render(); return Task.CompletedTask; })); }
+                content.Children.Add(Action("查看与处理", () => ReplaceAsync(ct => TaskDetailAsync(id, ct))));
+                content.Children.Add(Action("个人置顶", async () => { await WriteAsync("PUT", Base + "/tasks/" + Escape(id) + "/pin", new JsonObject { ["pinned"] = true }); await NavigateAsync("tasks"); }));
+                var card = Ui.Card(content); card.Margin = new Thickness(Math.Min(depth, 3) * 10, 0, 0, 0); records.Children.Add(card);
+                if (filtered || !collapsed.Contains(id)) foreach (var child in children) Add(child, depth + 1);
+            }
+            records.Children.Add(Ui.Label("全部任务与关系", 20));
+            foreach (var task in tasks.Where(t => !tasks.Any(p => p.Text("taskId") == t.Text("parentTaskId")))) Add(task, 0);
+            if (matches.Count == 0) records.Children.Add(Ui.Label("当前筛选下没有任务"));
         }
-        panel.Children.Add(Ui.Card(query, filter, mine, Action("搜索", SearchAsync))); panel.Children.Add(records); await SearchAsync();
+        panel.Children.Add(Ui.Card(query, filter, mine, Action("搜索", () => { Render(); return Task.CompletedTask; }))); panel.Children.Add(records); Render();
         return panel;
     }
     private async Task<UIElement> TaskEditorAsync(JsonNode? task, JsonNode? graph, CancellationToken token)
@@ -36,15 +57,16 @@ public sealed partial class WorkspaceView
         var due = Ui.Field("截止日期（YYYY-MM-DD，留空未知）", draft?.Text("dueDate") ?? task.Text("dueDate"), max: 10);
         var members = (await repository.GetAsync(Base + "/members?limit=100", token)).Rows();
         var assignee = Ui.Choice("负责人", new[] { ("", "暂不分配") }.Concat(members.Select(m => (m.Text("userId"), m.Text("displayName")))), draft?["assigneeId"]?.ToString() ?? task.Text("assigneeId"));
+        var parent = Ui.Choice("父任务", new[] { ("", "无父任务") }.Concat(graph.Rows().Where(t => t.Text("taskId") != task.Text("taskId")).Select(t => (t.Text("taskId"), t.Text("title")))), draft?.Text("parentTaskId") ?? task.Text("parentTaskId"));
         var dependencies = new Dictionary<string, CheckBox>(); var dependencyPanel = Ui.Stack(Ui.Label("前置任务"));
         foreach (var row in graph.Rows().Where(x => x.Text("taskId") != task.Text("taskId")))
         { var box = new CheckBox { Content = row.Text("title"), IsChecked = (draft?["dependsOnTaskIds"] != null ? draft : task).Rows("dependsOnTaskIds").Any(x => x.ToString() == row.Text("taskId")) }; dependencies[row.Text("taskId")] = box; dependencyPanel.Children.Add(box); }
         var expectedRevision = draft?["expectedRevision"].Copy() ?? task?["revision"].Copy();
         var expectedGraphRevision = draft?["expectedGraphRevision"].Copy() ?? graph?["graphRevision"].Copy();
-        JsonObject ContentBody() => new() { ["title"] = title.Text.Trim(), ["detail"] = detail.Text.Trim(), ["criteria"] = criteria.Text.Trim(), ["effortHours"] = effort.Text, ["dueDate"] = due.Text, ["expectedRevision"] = expectedRevision.Copy(), ["expectedGraphRevision"] = expectedGraphRevision.Copy(), ["assigneeId"] = assignee.Value().Length==0?null:JsonValue.Create(assignee.Value()), ["dependsOnTaskIds"] = new JsonArray(dependencies.Where(x=>x.Value.IsChecked==true).Select(x=>(JsonNode?)JsonValue.Create(x.Key)).ToArray()) };
-        TrackDraft(key, ContentBody, new Control[]{title, detail, criteria, effort, due,assignee}.Concat(dependencies.Values).ToArray());
+        JsonObject ContentBody() => new() { ["parentTaskId"] = parent.Value().Length == 0 ? null : JsonValue.Create(parent.Value()), ["title"] = title.Text.Trim(), ["detail"] = detail.Text.Trim(), ["criteria"] = criteria.Text.Trim(), ["effortHours"] = effort.Text, ["dueDate"] = due.Text, ["expectedRevision"] = expectedRevision.Copy(), ["expectedGraphRevision"] = expectedGraphRevision.Copy(), ["assigneeId"] = assignee.Value().Length==0?null:JsonValue.Create(assignee.Value()), ["dependsOnTaskIds"] = new JsonArray(dependencies.Where(x=>x.Value.IsChecked==true).Select(x=>(JsonNode?)JsonValue.Create(x.Key)).ToArray()) };
+        TrackDraft(key, ContentBody, new Control[]{title, detail, criteria, effort, due,assignee,parent}.Concat(dependencies.Values).ToArray());
         panel.Children.Add(Ui.Card(title, detail, criteria, effort, due, Action("暂存到本机", async () => { await repository.Store.SaveDraftAsync(key, ContentBody()); StatusChanged?.Invoke("当前账户的任务草稿已保存。"); })));
-        if (task == null) panel.Children.Add(Ui.Card(assignee, dependencyPanel));
+        if (task == null) panel.Children.Add(Ui.Card(parent, assignee, dependencyPanel));
         panel.Children.Add(Action(task == null ? "创建任务" : "保存任务内容", async () =>
         {
             if (title.Text.Trim().Length == 0 || criteria.Text.Trim().Length == 0) throw new InvalidOperationException("请填写任务名称和验收标准。");
@@ -52,7 +74,7 @@ public sealed partial class WorkspaceView
             if (due.Text.Length > 0 && !DateOnly.TryParseExact(due.Text, "yyyy-MM-dd", out _)) throw new InvalidOperationException("请填写 YYYY-MM-DD 日期。");
             var submittedDraft=ContentBody();var body = (JsonObject)submittedDraft.DeepClone(); await repository.Store.SaveDraftAsync(key, submittedDraft); body["effortHours"] = hours; body["dueDate"] = due.Text.Length == 0 ? null : JsonValue.Create(due.Text); body["duePrecision"] = due.Text.Length == 0 ? "unknown" : "date";
             if (task == null) { body.Remove("expectedRevision"); body["assigneeId"] = assignee.Value().Length == 0 ? null : JsonValue.Create(assignee.Value()); body["dependsOnTaskIds"] = new JsonArray(dependencies.Where(x => x.Value.IsChecked == true).Select(x => (JsonNode?)JsonValue.Create(x.Key)).ToArray()); }
-            else {body.Remove("expectedGraphRevision");body.Remove("assigneeId");body.Remove("dependsOnTaskIds");}
+            else {body.Remove("parentTaskId");body.Remove("expectedGraphRevision");body.Remove("assigneeId");body.Remove("dependsOnTaskIds");}
             var result = await WriteAsync(task == null ? "POST" : "PATCH", Base + "/tasks" + (task == null ? "" : "/" + Escape(task.Text("taskId"))), body, true);
             if (result.Flag("queued") || result.Flag("offlinePending")) { StatusChanged?.Invoke("任务修改已保存到本机等待同步；服务端状态尚未更新。"); return; }
             if(!JsonNode.DeepEquals(ContentBody(),submittedDraft)){await repository.Store.SaveDraftAsync(key,ContentBody());StatusChanged?.Invoke("提交成功；提交期间继续输入的编辑已保留为本机草稿，请刷新后核对版本。");return;}
@@ -67,6 +89,7 @@ public sealed partial class WorkspaceView
         var panel = Page(task.Text("title"), Ui.Status(task.Text("lifecycleState")) + " · 版本 " + task.Text("revision"));
         panel.Children.Add(Action("返回任务列表", () => NavigateAsync("tasks")));
         panel.Children.Add(Ui.Card(Ui.Label("任务说明", 20), Ui.Label(task.Text("detail")), Ui.Label("验收标准", 20), Ui.Label(task.Text("criteria"))));
+        try { var relations = await repository.GetAsync(Base + "/tasks/graph", token); AddTaskRelations(panel, task!, relations.Rows(), true); } catch (OperationCanceledException) { throw; } catch (Exception) { panel.Children.Add(Ui.Label("任务关系暂不可用，请返回列表刷新")); }
         if (Can("taskManage"))
         {
             panel.Children.Add(Action("编辑任务", async () => { var graph = await repository.GetAsync(Base + "/tasks/graph", PageToken); await ReplaceAsync(ct => TaskEditorAsync(task, graph, ct)); }));
@@ -152,8 +175,10 @@ public sealed partial class WorkspaceView
         var panel = Page("分工与前置依赖", "负责人和依赖图分别按读取时版本保存，后端校验循环依赖。");
         var assigned = Ui.Choice("任务负责人", new[] { ("", "暂不分配") }.Concat(members.Select(x => (x.Text("userId"), x.Text("displayName")))), task.Text("assigneeId")); var reason = Ui.Field("分工理由", "", true, 2000);
         panel.Children.Add(Ui.Card(assigned, reason, Action("保存分工", async () => { if (string.IsNullOrWhiteSpace(reason.Text)) throw new InvalidOperationException("请填写分工理由。"); await WriteAsync("POST", path + "/assign", new JsonObject { ["expectedRevision"] = task?["revision"].Copy(), ["assigneeId"] = assigned.Value().Length > 0 ? JsonValue.Create(assigned.Value()) : null, ["reason"] = reason.Text.Trim() }); await ReplaceAsync(ct => TaskDetailAsync(task.Text("taskId"), ct)); }, "确认调整当前任务负责人？")));
+        var parent = Ui.Choice("父任务", new[] { ("", "无父任务") }.Concat(graph.Rows().Where(t => t.Text("taskId") != task.Text("taskId") && !TaskAncestors(t, graph.Rows()).Any(p => p.Text("taskId") == task.Text("taskId"))).Select(t => (t.Text("taskId"), t.Text("title")))), task.Text("parentTaskId"));
+        panel.Children.Add(Ui.Card(Ui.Label("父任务自动依赖子任务，仍可提前执行和提交。"), parent, Action("保存父任务", async () => { await WriteAsync("PUT", path + "/parent", new JsonObject { ["parentTaskId"] = parent.Value().Length == 0 ? null : JsonValue.Create(parent.Value()), ["expectedGraphRevision"] = graph?["graphRevision"].Copy() }); await ReplaceAsync(ct => TaskDetailAsync(task.Text("taskId"), ct)); })));
         var dependencies = new Dictionary<string, CheckBox>(); var choices = Ui.Stack(Ui.Label("前置任务", 20));
-        foreach (var row in graph.Rows().Where(x => x.Text("taskId") != task.Text("taskId"))) { var check = new CheckBox { Content = row.Text("title"), IsChecked = task.Rows("dependsOnTaskIds").Any(x => x.ToString() == row.Text("taskId")) }; dependencies[row.Text("taskId")] = check; choices.Children.Add(check); }
+        foreach (var row in graph.Rows().Where(x => x.Text("taskId") != task.Text("taskId"))) { var check = new CheckBox { Content = row.Text("title"), IsChecked = task.Rows(task?["manualDependsOnTaskIds"] != null ? "manualDependsOnTaskIds" : "dependsOnTaskIds").Any(x => x.ToString() == row.Text("taskId")) }; dependencies[row.Text("taskId")] = check; choices.Children.Add(check); }
         choices.Children.Add(Action("保存前置依赖", async () => { await WriteAsync("PUT", path + "/dependencies", new JsonObject { ["expectedGraphRevision"] = graph?["graphRevision"].Copy(), ["dependsOnTaskIds"] = new JsonArray(dependencies.Where(x => x.Value.IsChecked == true).Select(x => (JsonNode?)JsonValue.Create(x.Key)).ToArray()) }); await ReplaceAsync(ct => TaskDetailAsync(task.Text("taskId"), ct)); })); panel.Children.Add(Ui.Card(choices));
         if (task.Text("lifecycleState") == "accepted")
         {

@@ -105,6 +105,9 @@ internal fun proposalFeedbackBody(id:String,reason:String):JsonObject {
                 ProposalField(!busy,"任务说明",row.twText("detail"),{update(group,index,"detail",JsonPrimitive(it))},4000,2)
                 ProposalField(!busy,"验收标准",row.twText("criteria"),{update(group,index,"criteria",JsonPrimitive(it))},4000,2)
                 ProposalField(!busy,"预计投入（小时）",row.twText("effortHours"),{update(group,index,"effortHours",JsonPrimitive(it))},16)
+                val parentField=if(group=="tasks")"parent"else"parentTaskId"
+                val parentValue=if(parentField in row)row.twText(parentField)else tasks.firstOrNull{it.twText("taskId")==row.twText("taskId")}?.twText("parentTaskId").orEmpty()
+                ProposalField(!busy,"父任务标识（留空为无父任务）",parentValue,{update(group,index,parentField,it.takeIf(String::isNotBlank)?.let(::JsonPrimitive)?:JsonNull)},200)
                 if(group=="tasks") {
                     Text("本条标识：${proposalItemKey(group,row,index)}",style=MaterialTheme.typography.bodySmall)
                     ProposalField(!busy,"前置任务标识（逗号分隔）",if(row["dependsOn"] is JsonPrimitive)row.twText("dependsOn")else row.twIds("dependsOn").joinToString(","),{text->update(group,index,"dependsOn",JsonPrimitive(text))},4000)
